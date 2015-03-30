@@ -30,6 +30,7 @@ NoLevelZeroMapPoints: True
 FASTMethod: OAST16
 MaxStereoInitLoops: 4
 AutoInitPixel: 20
+AutoInit: True
 
 # --- bluefox - low distort lens  ---
 # Cam_fx: 0.795574
