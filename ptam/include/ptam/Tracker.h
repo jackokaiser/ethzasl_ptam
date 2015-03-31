@@ -67,7 +67,6 @@ public:
   void command(const std::string & params);
   std::list<Trail> & getTrails(){return  mlTrails;};
   std::list<Bearing> & getBearings(){return  mlBearings;};
-  ros::Time initialTimestamp;
 
   bool getTrailTrackingStarted(){return mnInitialStage == TRAIL_TRACKING_STARTED;};
   bool getTrailTrackingComplete(){return mnInitialStage == TRAIL_TRACKING_COMPLETE;};
@@ -89,7 +88,7 @@ protected:
   void RenderGrid();              // Draws the reference grid
 
   // The following members are used for initial map tracking (to get the first stereo pair and correspondences):
-  void TrackForInitialMap();      // This is called by TrackFrame if there is not a map yet.
+  void TrackForInitialMap(const ros::Time& timestamp);      // This is called by TrackFrame if there is not a map yet.
   enum {TRAIL_TRACKING_NOT_STARTED,
     TRAIL_TRACKING_STARTED,
     TRAIL_TRACKING_COMPLETE} mnInitialStage;  // How far are we towards making the initial map?
@@ -97,6 +96,9 @@ protected:
     int  TrailTracking_Advance();   // Steady-state of initial trail tracking. Called by TrackForInitialMap.
     std::list<Trail> mlTrails;      // Used by trail tracking
     std::list<Bearing> mlBearings;      // Used by closed form for map initialization
+    std::vector<ros::Time> bearingTimestamps;
+    ros::Time initialTimestamp;
+
     KeyFrame::Ptr mFirstKF;              // First of the stereo pair
     KeyFrame::Ptr mPreviousFrameKF;      // Used by trail tracking to check married matches
 

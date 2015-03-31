@@ -91,6 +91,7 @@ void Tracker::Reset()
     (*i).irPos.clear();
   }
   mlBearings.clear();
+  bearingTimestamps.clear();
   mCamera.SetImageSize(mirSize);
   mCurrentKF->mMeasurements.clear();
   mnLastKeyFrameDropped = -20;
@@ -282,7 +283,7 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
       }
     }
     //}
-    TrackForInitialMap();
+    TrackForInitialMap(timestamp);
   }
   //}
 
@@ -448,10 +449,11 @@ void Tracker::GUICommandHandler(string sCommand, string sParams)  // Called by t
 // using cheap frame-to-frame tracking (which is very brittle - quick camera motion will
 // break it.) The salient points are stored in a list of `Trail' data structures.
 // What action TrackForInitialMap() takes depends on the mnInitialStage enum variable..
-void Tracker::TrackForInitialMap()
+void Tracker::TrackForInitialMap(const ros::Time& timestamp)
 {
   // MiniPatch tracking threshhold.
   //Weiss{
+  bearingTimestamps.push_back(timestamp);
 
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   int gvnMaxSSD = pPars.MiniPatchMaxSSD;
@@ -477,9 +479,9 @@ void Tracker::TrackForInitialMap()
 
   if(mnInitialStage == TRAIL_TRACKING_STARTED)
   {
-    // JACK: we need a vector of time here
     int nGoodTrails = TrailTracking_Advance();  // This call actually tracks the trails
-    if(nGoodTrails < 10) // if most trails have been wiped out, no point continuing.
+    int minimumGoodTrail = pPars.ClosedFormInit ? 2 : 10;
+    if(nGoodTrails < minimumGoodTrail) // if most trails have been wiped out, no point continuing.
     {
       Reset();
       return;
@@ -595,6 +597,11 @@ void Tracker::TrailTracking_Start()
     t.irInitialPos = vCornersAndSTScores[i].second;
     t.irCurrentPos = t.irInitialPos;
     mlTrails.push_back(t);
+
+    Bearing b;
+    b.irPos.push_back(vCornersAndSTScores[i].second);
+    b.mPatch.SampleFromImage(vCornersAndSTScores[i].second, mCurrentKF->aLevels[level].im);
+
     nToAdd--;
   }
   mPreviousFrameKF.reset(new KeyFrame);
@@ -622,9 +629,8 @@ int Tracker::TrailTracking_Advance()
   Level &lPreviousFrame = mPreviousFrameKF->aLevels[level];
 
 
-  for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end();)
+  for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end(); ++i)
   {
-    list<Trail>::iterator next = i; next++;
 
     Trail &trail = *i;
     ImageRef irStart = trail.irCurrentPos;
@@ -655,9 +661,8 @@ int Tracker::TrailTracking_Advance()
     }
     if(!bFound) // Erase from list of trails if not found this frame.
     {
-      mlTrails.erase(i);
+     i = mlTrails.erase(i);
     }
-    i = next;
   }
   if(mbDraw)
     glEnd();
