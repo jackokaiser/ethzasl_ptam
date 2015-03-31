@@ -12,6 +12,7 @@
 
 #include <TooN/SVD.h>
 #include <TooN/SymEigen.h>
+#include <TooN/TooN.h>
 
 #include <gvars3/instances.h>
 #include <fstream>
@@ -27,6 +28,7 @@
 using namespace CVD;
 using namespace std;
 using namespace GVars3;
+using namespace TooN;
 
 //Weiss{ feature statistics
 //static unsigned int outcount[5]={0,0,0,0,0};
@@ -235,15 +237,44 @@ Vector<3> MapMaker::ReprojectPoint(SE3<> se3AfromB, const Vector<2> &v2A, const 
   return project(v4Smallest);
 }
 
+list< vector< Vector<3> > > UnProjectFeatures(const list<vector<ImageRef> >& features)
+{
+  // mCamera.UnProject(vTrailMatches[i].second)
+  cout<<"what?"<<endl;
+  return list< vector< Vector<3> > >();
+}
 
 bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   KeyFrame::Ptr kS,
-                                  std::list<std::vector<CVD::ImageRef> > &bearings,
-                                  std::vector<ros::Time> bearingTimestamps,
-                                  std::vector<sensor_msgs::Imu> imu_msgs,
-                                  std::vector<ros::Time> imuTimestamps,
+                                  const list<vector<CVD::ImageRef> >& features,
+                                  const vector<ros::Time>& bearingTimestamps,
+                                  const vector<sensor_msgs::Imu>& imu_msgs,
+                                  const vector<ros::Time>& imuTimestamps,
                                   SE3<> &se3TrackerPose)
 {
+  int nObs = features.front().size();
+  int nFeatures = features.size();
+
+  list< vector < Vector<3> > > bearingVectors = UnProjectFeatures(features);
+
+  // JACK: you may want to drop some camera images to increase speed
+  mCamera.SetImageSize(kF->aLevels[0].im.size());
+
+
+  int nEquations = 3*(nFeatures - 1)*nObs;
+  int nUnknowns = nObs * nFeatures + 6;
+  Matrix<> A = Zeros(nEquations, nUnknowns);
+  Vector<> b = Zeros(nUnknowns);
+
+  // mui= bearData(1).features;
+  //   MU1= [mui(:,1), repmat(z3,1,nFeatures - 1 )];
+  //   for iFeatures=2:nFeatures
+  //       MU1= [MU1; repmat(z3,1,iFeatures-1), mui(:,iFeatures), repmat(z3,1,nFeatures-iFeatures)];
+  //   end;
+
+  for (int i=0; i<nObs; i++)
+  {
+  }
   return false;
 }
 

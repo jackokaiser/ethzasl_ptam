@@ -240,7 +240,6 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
           if (elapsedTime.toSec() > pPars.ClosedFormDuration)
           {
             mbUserPressedSpacebar=true;
-            cout << "Initialized command lol" << endl;
           }
         }
         else

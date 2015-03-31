@@ -17,6 +17,7 @@
 #include <cvd/byte.h>
 #include <cvd/thread.h>
 #include <sensor_msgs/Imu.h>
+#include <TooN/TooN.h>
 
 #include "Map.h"
 #include "KeyFrame.h"
@@ -51,12 +52,14 @@ public:
                       std::vector<std::pair<CVD::ImageRef, CVD::ImageRef> > &vMatches,
                       SE3<> &se3CameraPos);
 
+  std::list< std::vector< TooN::Vector<3> > > UnProjectFeatures(const std::list<std::vector<CVD::ImageRef> >& features);
+
   bool InitFromClosedForm(KeyFrame::Ptr kF,
                           KeyFrame::Ptr kS,
-                          std::list< std::vector<CVD::ImageRef> > &bearings,
-                          std::vector<ros::Time> bearingTimestamps,
-                          std::vector<sensor_msgs::Imu> imu_msgs,
-                          std::vector<ros::Time> imuTimestamps,
+                          const std::list< std::vector<CVD::ImageRef> >& features,
+                          const std::vector<ros::Time>& bearingTimestamps,
+                          const std::vector<sensor_msgs::Imu>& imu_msgs,
+                          const std::vector<ros::Time>& imuTimestamps,
                           SE3<> &se3TrackerPose);
 
   bool InitFromStereo_OLD(KeyFrame::Ptr kFirst, KeyFrame::Ptr kSecond,  // EXPERIMENTAL HACK
