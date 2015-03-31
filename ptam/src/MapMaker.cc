@@ -76,7 +76,7 @@ void MapMaker::run()
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
 #endif
 
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
 
   while(!shouldStop())  // ShouldStop is a CVD::Thread func which return true if the thread is told to exit.
@@ -149,7 +149,7 @@ bool MapMaker::ResetDone()
   return mbResetDone;
 }
 
-// HandleBadPoints() Does some heuristic checks on all points in the map to see if 
+// HandleBadPoints() Does some heuristic checks on all points in the map to see if
 // they should be flagged as bad, based on tracker feedback.
 void MapMaker::HandleBadPoints()
 {
@@ -187,8 +187,8 @@ void MapMaker::HandleBadPoints()
               Vector<2> ptlev0 = LevelZeroPos(p->irCenter, p->nSourceLevel); //to level zero coords
               for(int iP = k.vpPoints.size()-1; iP>=0; iP--){ //search a nearby point as new bestPoint
                 Vector<2> pt2lev0 = LevelZeroPos(k.vpPoints[iP]->irCenter, k.vpPoints[iP]->nSourceLevel);
-                tempdist = abs(ptlev0[0] - pt2lev0[0]) + abs(ptlev0[1] - pt2lev0[1]); 	//calc simple dist
-                if(tempdist < mindist && ! k.vpPoints[iP]->bBad){ 					//if closer and not bad
+                tempdist = abs(ptlev0[0] - pt2lev0[0]) + abs(ptlev0[1] - pt2lev0[1]);   //calc simple dist
+                if(tempdist < mindist && ! k.vpPoints[iP]->bBad){           //if closer and not bad
                   mindist = tempdist;
                   k.apCurrentBestPoints[ibest] = k.vpPoints[iP]; //closest point as new point
                 }
@@ -236,9 +236,19 @@ Vector<3> MapMaker::ReprojectPoint(SE3<> se3AfromB, const Vector<2> &v2A, const 
 }
 
 
+bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
+                                  KeyFrame::Ptr kS,
+                                  std::list<std::vector<CVD::ImageRef> > &bearings,
+                                  std::vector<ros::Time> bearingTimestamps,
+                                  std::vector<sensor_msgs::Imu> imu_msgs,
+                                  std::vector<ros::Time> imuTimestamps,
+                                  SE3<> &se3TrackerPose)
+{
+  return false;
+}
 
 // InitFromStereo() generates the initial match from two keyframes
-// and a vector of image correspondences. Uses the 
+// and a vector of image correspondences. Uses the
 bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
                               KeyFrame::Ptr kS,
                               vector<pair<ImageRef, ImageRef> > &vTrailMatches,
@@ -254,11 +264,11 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
   mCamera.SetImageSize(kF->aLevels[0].im.size());
 
 //Weiss{
-	if(vTrailMatches.size()<4)
-	{
-		ROS_WARN_STREAM("Too few matches to init.");
-		return false;
-	}
+  if(vTrailMatches.size()<4)
+  {
+    ROS_WARN_STREAM("Too few matches to init.");
+    return false;
+  }
 
   /////////////// init alternative: get rotation from SBI and direction from optical flow /////////////////
   ///////////////  turns out to be slightly faster but much less robuts...                /////////////////
@@ -408,11 +418,11 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
   }
 
 //Weiss{
-	if(mMap.vpPoints.size()<4)
-	{
-		ROS_WARN_STREAM("Too few map points to init.");
-		return false;
-	}
+  if(mMap.vpPoints.size()<4)
+  {
+    ROS_WARN_STREAM("Too few map points to init.");
+    return false;
+  }
 //}
 
   mMap.vpKeyFrames.push_back(pkFirst);
@@ -427,17 +437,17 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
   // (Needed for epipolar search)
 
 //Weiss{
-	if(!RefreshSceneDepth(pkFirst))
-	{
-		ROS_WARN_STREAM("Something is seriously wrong with the first KF.");
-		return false;
-	}
-	if(!RefreshSceneDepth(pkSecond))
-	{
-		ROS_WARN_STREAM("Something is seriously wrong with the second KF.");
-		return false;
-	}
-	mdWiggleScaleDepthNormalized = mdWiggleScale / pkFirst->dSceneDepthMean;
+  if(!RefreshSceneDepth(pkFirst))
+  {
+    ROS_WARN_STREAM("Something is seriously wrong with the first KF.");
+    return false;
+  }
+  if(!RefreshSceneDepth(pkSecond))
+  {
+    ROS_WARN_STREAM("Something is seriously wrong with the second KF.");
+    return false;
+  }
+  mdWiggleScaleDepthNormalized = mdWiggleScale / pkFirst->dSceneDepthMean;
 
 
   //check if point have been added
@@ -449,10 +459,10 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
   addedsome |= AddSomeMapPoints(1);
   addedsome |= AddSomeMapPoints(2);
   if(!addedsome)
-	{
-		ROS_WARN_STREAM("Could not add any map points on any level - abort init.");
-		return false;
-	}
+  {
+    ROS_WARN_STREAM("Could not add any map points on any level - abort init.");
+    return false;
+  }
   //}
 
   mbBundleConverged_Full = false;
@@ -492,7 +502,7 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
 }
 
 // ThinCandidates() Thins out a key-frame's candidate list.
-// Candidates are those salient corners where the mapmaker will attempt 
+// Candidates are those salient corners where the mapmaker will attempt
 // to make a new map point by epipolar search. We don't want to make new points
 // where there are already existing map points, this routine erases such candidates.
 // Operates on a single level of a keyframe.
@@ -580,8 +590,8 @@ void MapMaker::ApplyGlobalScaleToMap(double dScale)
 }
 
 // The tracker entry point for adding a new keyframe;
-// the tracker thread doesn't want to hang about, so 
-// just dumps it on the top of the mapmaker's queue to 
+// the tracker thread doesn't want to hang about, so
+// just dumps it on the top of the mapmaker's queue to
 // be dealt with later, and return.
 void MapMaker::AddKeyFrame(KeyFrame::Ptr k)
 {
@@ -602,7 +612,7 @@ void MapMaker::AddKeyFrameFromTopOfQueue()
 
   //Weiss{
 
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   if (pPars.MaxKF>1)	// MaxKF<2 means keep all KFs
   {
@@ -909,7 +919,7 @@ bool MapMaker::NeedNewKeyFrame(KeyFrame::Ptr kCurrent)
   double dDist = KeyFrameLinearDist(kCurrent, pClosest);
 
   //Weiss{
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
 
   std::vector<double> medianpixdist;
@@ -931,7 +941,7 @@ bool MapMaker::NeedNewKeyFrame(KeyFrame::Ptr kCurrent)
 
   dDist *= (1.0 / kCurrent->dSceneDepthMean);
 
-  //	
+  //
   //	const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   //if(dDist > GV2.GetDouble("MapMaker.MaxKFDistWiggleMult",1.0,SILENT) * mdWiggleScaleDepthNormalized)
   if(pPars.UseKFPixelDist & (mediandist>pPars.AutoInitPixel))
@@ -982,7 +992,7 @@ void MapMaker::BundleAdjustRecent()
 
   //Weiss{ if we only keep N KFs only insert most recently added KF as loose
   unsigned char nloose = 4;
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   if (pPars.MaxKF>1)	// MaxKF<2 means keep all KFs
     nloose=0;
@@ -1170,7 +1180,7 @@ void MapMaker::BundleAdjust(set<KeyFrame::Ptr> sAdjustSet, set<KeyFrame::Ptr> sF
 // Mapmaker's try-to-find-a-point-in-a-keyframe code. This is used to update
 // data association if a bad measurement was detected, or if a point
 // was never searched for in a keyframe in the first place. This operates
-// much like the tracker! So most of the code looks just like in 
+// much like the tracker! So most of the code looks just like in
 // TrackerData.h.
 bool MapMaker::ReFind_Common(KeyFrame::Ptr k, MapPoint::Ptr p)
 {
@@ -1329,7 +1339,7 @@ SE3<> MapMaker::CalcPlaneAligner()
     return SE3<>();
   };
   //Weiss{
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   int nRansacs = pPars.PlaneAlignerRansacs;
   //int nRansacs = GV2.GetInt("MapMaker.PlaneAlignerRansacs", 100, HIDDEN|SILENT);
@@ -1479,7 +1489,7 @@ void MapMaker::GUICommandHandler(string sCommand, string sParams)  // Called by 
     {
       ostringstream ost1;
       ost1 << "keyframes/" << i << ".jpg";
-      //	  img_save(mMap.vpKeyFrames[i]->aLevels[0].im, ost1.str());
+      //    img_save(mMap.vpKeyFrames[i]->aLevels[0].im, ost1.str());
 
       ostringstream ost2;
       ost2 << "keyframes/" << i << ".info";
@@ -1494,16 +1504,4 @@ void MapMaker::GUICommandHandler(string sCommand, string sParams)  // Called by 
 
   mMessageForUser << "! MapMaker::GUICommandHandler: unhandled command "<< sCommand << endl;
   exit(1);
-}; 
-
-
-
-
-
-
-
-
-
-
-
-
+};

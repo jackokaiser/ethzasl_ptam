@@ -5,10 +5,10 @@
 // This header declares the MapMaker class
 // MapMaker makes and maintains the Map struct
 // Starting with stereo initialisation from a bunch of matches
-// over keyframe insertion, continual bundle adjustment and 
+// over keyframe insertion, continual bundle adjustment and
 // data-association refinement.
 // MapMaker runs in its own thread, although some functions
-// (notably stereo init) are called by the tracker and run in the 
+// (notably stereo init) are called by the tracker and run in the
 // tracker's thread.
 
 #ifndef __MAPMAKER_H
@@ -16,6 +16,7 @@
 #include <cvd/image.h>
 #include <cvd/byte.h>
 #include <cvd/thread.h>
+#include <sensor_msgs/Imu.h>
 
 #include "Map.h"
 #include "KeyFrame.h"
@@ -34,7 +35,7 @@ struct MapMakerData
 {
   std::set<KeyFrame::Ptr> sMeasurementKFs;   // Which keyframes has this map point got measurements in?
   std::set<KeyFrame::Ptr> sNeverRetryKFs;    // Which keyframes have measurements failed enough so I should never retry?
-  inline int GoodMeasCount()            
+  inline int GoodMeasCount()
   {  return sMeasurementKFs.size(); }
 };
 
@@ -49,6 +50,14 @@ public:
   bool InitFromStereo(KeyFrame::Ptr kFirst, KeyFrame::Ptr kSecond,
                       std::vector<std::pair<CVD::ImageRef, CVD::ImageRef> > &vMatches,
                       SE3<> &se3CameraPos);
+
+  bool InitFromClosedForm(KeyFrame::Ptr kF,
+                          KeyFrame::Ptr kS,
+                          std::list< std::vector<CVD::ImageRef> > &bearings,
+                          std::vector<ros::Time> bearingTimestamps,
+                          std::vector<sensor_msgs::Imu> imu_msgs,
+                          std::vector<ros::Time> imuTimestamps,
+                          SE3<> &se3TrackerPose);
 
   bool InitFromStereo_OLD(KeyFrame::Ptr kFirst, KeyFrame::Ptr kSecond,  // EXPERIMENTAL HACK
                           std::vector<std::pair<CVD::ImageRef, CVD::ImageRef> > &vMatches,
@@ -86,7 +95,7 @@ protected:
   SE3<> CalcPlaneAligner();
 
   // Map expansion functions:
-  void AddKeyFrameFromTopOfQueue();  
+  void AddKeyFrameFromTopOfQueue();
   void ThinCandidates(KeyFrame::Ptr k, int nLevel);
   bool AddSomeMapPoints(int nLevel);
   bool AddPointEpipolar(KeyFrame::Ptr kSrc, KeyFrame::Ptr kTarget, int nLevel, int nCandidate);
@@ -129,7 +138,7 @@ protected:
   double mdWiggleScale;  // Metric distance between the first two KeyFrames (copied from GVar)
   // This sets the scale of the map
   //GVars3::gvar3<double> mgvdWiggleScale;   // GVar for above
-  double mdWiggleScaleDepthNormalized;  // The above normalized against scene depth, 
+  double mdWiggleScaleDepthNormalized;  // The above normalized against scene depth,
   // this controls keyframe separation
 
   bool mbBundleConverged_Full;    // Has global bundle adjustment converged?
@@ -147,21 +156,3 @@ protected:
 };
 
 #endif
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -256,7 +256,6 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
           medianvec.resize(mlTrails.size());
           for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end();++i)
           {
-            // JACK: use this code to get vector directions from image reference
             Trail &trail = *i;
             // compensate pixel disparity with rotation!!
             Vector<2> firstvec = LevelZeroPos(trail.irInitialPos, level);
@@ -268,7 +267,6 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
             ++k;
           }
           delete pSBIsecond;
-          // JACK: instead of mediandist, the "start" condition is elapsedTime > 3
 
           if(k>0)	// otherwise "if (mediandist>pPars.AutoInitPixel)" segfaults...
           {
@@ -488,7 +486,6 @@ void Tracker::TrackForInitialMap(const ros::Time& timestamp)
       return;
     }
 
-    // JACK: branch here for CF initialization
     // If the user pressed spacebar here, use trails to run stereo and make the intial map..
     if(mbUserPressedSpacebar)
     {
@@ -509,6 +506,11 @@ void Tracker::TrackForInitialMap(const ros::Time& timestamp)
       bool initret=false;
       if (PtamParameters::varparams().ClosedFormInit)
       {
+        std::vector<sensor_msgs::Imu> imuData;
+        std::vector<ros::Time> imuTimestamps;
+        initret=mMapMaker.InitFromClosedForm(mFirstKF, mCurrentKF,
+                                             mlBearings, bearingTimestamps,
+                                             imuData, imuTimestamps, mse3CamFromWorld);
       }
       else
       {
