@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <vector>
+#include <iterator>
 
 using namespace CVD;
 using namespace std;
@@ -88,7 +89,7 @@ void Tracker::Reset()
   mnInitialStage = TRAIL_TRACKING_NOT_STARTED;
   mlTrails.clear();
   for (list<Bearing>::iterator i=mlBearings.begin(); i != mlBearings.end(); ++i) {
-    (*i).irPos.clear();
+    (*i).clear();
   }
   mlBearings.clear();
   bearingTimestamps.clear();
@@ -599,8 +600,8 @@ void Tracker::TrailTracking_Start()
     mlTrails.push_back(t);
 
     Bearing b;
-    b.irPos.push_back(vCornersAndSTScores[i].second);
-    b.mPatch.SampleFromImage(vCornersAndSTScores[i].second, mCurrentKF->aLevels[level].im);
+    b.push_back(vCornersAndSTScores[i].second);
+    mlBearings.push_back(b);
 
     nToAdd--;
   }
@@ -628,11 +629,13 @@ int Tracker::TrailTracking_Advance()
   Level &lCurrentFrame = mCurrentKF->aLevels[level];
   Level &lPreviousFrame = mPreviousFrameKF->aLevels[level];
 
-
+  list<Bearing>::iterator bearIt = mlBearings.begin();
   for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end(); ++i)
   {
 
     Trail &trail = *i;
+    Bearing &bearing = *bearIt;
+
     ImageRef irStart = trail.irCurrentPos;
     ImageRef irEnd = irStart;
     bool bFound = trail.mPatch.FindPatch(irEnd, lCurrentFrame.im, 10, lCurrentFrame.vCorners);
@@ -646,23 +649,47 @@ int Tracker::TrailTracking_Advance()
         bFound = false;
 
       trail.irCurrentPos = irEnd;
+      // the bearings add the new image ref instead of replacing it
+      bearing.push_back(irEnd);
+
       nGoodTrails++;
     }
-    // JACK: if not bFound: pop it from Bearing in case we do CF
     if(mbDraw)
     {
       if(!bFound)
         glColor3f(0,1,1); // Failed trails flash purple before dying.
       else
         glColor3f(1,1,0);
-      glVertex(LevelZeroPos(trail.irInitialPos, level));
-      if(bFound) glColor3f(1,0,0);
-      glVertex(LevelZeroPos(trail.irCurrentPos, level));
+      if (PtamParameters::varparams().ClosedFormInit)
+      {
+        glColor3f(1, 1, 0);
+        Bearing::iterator irPosIt = bearing.begin();
+        ImageRef previousImgRef = (*irPosIt);
+        ++irPosIt;
+        float size = (float) bearing.size();
+        float irPosIdx = 1;
+        for (; irPosIt != bearing.end(); ++irPosIt, ++irPosIdx)
+        {
+          glVertex(LevelZeroPos(previousImgRef, level));
+          glColor3f(1, 1-irPosIdx / size, 0);
+          glVertex(LevelZeroPos((*irPosIt), level));
+          previousImgRef = (*irPosIt);
+        }
+      }
+      else
+      {
+        glVertex(LevelZeroPos(trail.irInitialPos, level));
+        if(bFound) glColor3f(1,0,0);
+        glVertex(LevelZeroPos(trail.irCurrentPos, level));
+      }
     }
     if(!bFound) // Erase from list of trails if not found this frame.
     {
-     i = mlTrails.erase(i);
+      i = mlTrails.erase(i);
+      (*bearIt).clear();
+      bearIt = mlBearings.erase(bearIt);
     }
+    bearIt++;
   }
   if(mbDraw)
     glEnd();

@@ -39,11 +39,7 @@ struct Trail    // This struct is used for initial correspondences of the first 
   CVD::ImageRef irInitialPos;
 };
 
-struct Bearing    // Position of one corner over multiple observations, used by Closed Form
-{
-  MiniPatch mPatch;
-  std::vector<CVD::ImageRef> irPos;
-};
+typedef std::vector<CVD::ImageRef> Bearing;    // Position of one corner over multiple observations, used by Closed Form
 
 class Tracker
 {
