@@ -138,7 +138,11 @@ void System::imageCallback(const sensor_msgs::ImageConstPtr & img)
     tracker_draw = !bDrawMap;
   }
 
-  mpTracker->TrackFrame(img_bw_, tracker_draw, imu_orientation);
+  if (varParams.ClosedFormInit) {
+    // collect IMU data
+  }
+
+  mpTracker->TrackFrame(img_bw_, tracker_draw, imu_orientation, img->header.stamp);
 
   publishPoseAndInfo(img->header);
 
@@ -167,8 +171,8 @@ void System::imageCallback(const sensor_msgs::ImageConstPtr & img)
   //  static unsigned long c=0;
   //  if((c+1)<(img->header.seq))
   //  {
-  //	  ROS_WARN_STREAM("missed " << img->header.seq-c+1<< " frame(s)");
-  //	  ROS_WARN_STREAM("time: " <<  (t1.toSec()-t.toSec()));
+  //    ROS_WARN_STREAM("missed " << img->header.seq-c+1<< " frame(s)");
+  //    ROS_WARN_STREAM("time: " <<  (t1.toSec()-t.toSec()));
   //  }
   //  ROS_WARN_STREAM("time: " <<  1/(t1.toSec()-t.toSec()));
   //  c=img->header.seq;
@@ -266,7 +270,7 @@ bool System::transformPoint(const std::string & target_frame, const std_msgs::He
 
 void System::publishPoseAndInfo(const std_msgs::Header & header)
 {
-  
+
   double scale = PtamParameters::varparams().Scale;
 
   static float fps = 0;
@@ -423,7 +427,7 @@ void System::publishPreviewImage(CVD::Image<CVD::byte> & img, const std_msgs::He
     if (drawTrails)
     {
 
-      
+
       int level = PtamParameters::fixparams().InitLevel;
 
       for (std::list<Trail>::iterator i = trails.begin(); i != trails.end(); i++)
@@ -510,11 +514,11 @@ bool System::pointcloudservice(ptam_com::PointCloudRequest & req, ptam_com::Poin
 
 bool System::keyframesservice(ptam_com::KeyFrame_srvRequest & req, ptam_com::KeyFrame_srvResponse & resp)
 {
-  // flags: 	negative number = send newest N KeyFrames
+  // flags:   negative number = send newest N KeyFrames
   //			zero = send all available KeyFrames
   //			positive number = send all KeyFrames with ID>N
 
-  
+
   double scale = PtamParameters::varparams().Scale;
 
   TooN::SE3<double> pose;
@@ -621,11 +625,3 @@ void System::GUICommandCallBack(void *ptr, string sCommand, string sParams)
   if (sCommand == "quit" || sCommand == "exit")
     ros::shutdown();
 }
-
-
-
-
-
-
-
-

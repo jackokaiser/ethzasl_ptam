@@ -30,12 +30,12 @@ using namespace GVars3;
 
 // The constructor mostly sets up interal reference variables
 // to the other classes..
-Tracker::Tracker(ImageRef irVideoSize, const ATANCamera &c, Map &m, MapMaker &mm) : 
-				                          mMap(m),
-				                          mMapMaker(mm),
-				                          mCamera(c),
-				                          mRelocaliser(mMap, mCamera),
-				                          mirSize(irVideoSize)
+Tracker::Tracker(ImageRef irVideoSize, const ATANCamera &c, Map &m, MapMaker &mm) :
+                                  mMap(m),
+                                  mMapMaker(mm),
+                                  mCamera(c),
+                                  mRelocaliser(mMap, mCamera),
+                                  mirSize(irVideoSize)
 {
   mCurrentKF.reset(new KeyFrame);
   mCurrentKF->bFixed = false;
@@ -87,6 +87,10 @@ void Tracker::Reset()
   //}
   mnInitialStage = TRAIL_TRACKING_NOT_STARTED;
   mlTrails.clear();
+  for (list<Bearing>::iterator i=mlBearings.begin(); i != mlBearings.end(); ++i) {
+    (*i).irPos.clear();
+  }
+  mlBearings.clear();
   mCamera.SetImageSize(mirSize);
   mCurrentKF->mMeasurements.clear();
   mnLastKeyFrameDropped = -20;
@@ -95,9 +99,9 @@ void Tracker::Reset()
   mbJustRecoveredSoUseCoarse = false;
 }
 
-void Tracker::TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const TooN::SO3<> & imu){
+void Tracker::TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const TooN::SO3<> & imu, const ros::Time &timestamp){
   mso3CurrentImu = imu;
-  TrackFrame(imFrame, bDraw);
+  TrackFrame(imFrame, bDraw, timestamp);
   mso3LastImu = mso3CurrentImu;
 }
 
@@ -106,7 +110,7 @@ void Tracker::TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const TooN:
 // It figures out what state the tracker is in, and calls appropriate internal tracking
 // functions. bDraw tells the tracker wether it should output any GL graphics
 // or not (it should not draw, for example, when AR stuff is being shown.)
-void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw)
+void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time &timestamp)
 {
   mbDraw = bDraw;
   mMessageForUser.str("");   // Wipe the user message clean
@@ -176,7 +180,7 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw)
         if(mTrackingQuality == BAD)   mMessageForUser << "bad.";
         mMessageForUser << " Found:";
         for(int i=0; i<LEVELS; i++) mMessageForUser << " " << manMeasFound[i] << "/" << manMeasAttempted[i];
-        //	    mMessageForUser << " Found " << mnMeasFound << " of " << mnMeasAttempted <<". (";
+        //      mMessageForUser << " Found " << mnMeasFound << " of " << mnMeasAttempted <<". (";
         mMessageForUser << " Map: " << mMap.vpPoints.size() << "P, " << mMap.vpKeyFrames.size() << "KF";
       }
 
@@ -212,47 +216,68 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw)
   else // If there is no map, try to make one.
     //Weiss{
   {
-    
+
     int level = PtamParameters::fixparams().InitLevel;
     const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
     if (pPars.AutoInit)
     {
       if(mnInitialStage == TRAIL_TRACKING_NOT_STARTED)
+      {
         mbUserPressedSpacebar=true;
+        initialTimestamp = timestamp;
+        cout << "initialized timestamp: " << initialTimestamp << endl;
+      }
       else if(mnInitialStage == TRAIL_TRACKING_STARTED)
       {
-        // calc rotation aid of SBI
-        SmallBlurryImage* pSBIsecond = new SmallBlurryImage(*mCurrentKF);
-        Vector<3> rotvec = CalcSBIRotation(mFirstKF->pSBI,pSBIsecond);
-        SO3<> rotmat = SO3<>::exp(rotvec);
-        std::vector<double> mediandistvec;
-
-        unsigned short k=0;
-        std::vector<double> medianvec;
-        medianvec.resize(mlTrails.size());
-        for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end();++i)
+        if (pPars.ClosedFormInit)
         {
-          Trail &trail = *i;
-          // compensate pixel disparity with rotation!!
-          Vector<2> firstvec = LevelZeroPos(trail.irInitialPos, level);
-          Vector<2> z1vec =  mCamera.UnProject(LevelZeroPos(trail.irCurrentPos, level));
-          Vector<3> dirvec = makeVector(z1vec[0],z1vec[1],1);
-          dirvec = rotmat.inverse()*dirvec;
-          z1vec = mCamera.Project(makeVector(dirvec[0]/dirvec[2],dirvec[1]/dirvec[2]));
-          mediandistvec.push_back(sqrt((z1vec[0]-firstvec[0])*(z1vec[0]-firstvec[0])+(z1vec[1]-firstvec[1])*(z1vec[1]-firstvec[1])));
-          ++k;
-        }
-        delete pSBIsecond;
+          ros::Duration elapsedTime = timestamp - initialTimestamp;
+          // JACK: also check number of camera imgs to be greater than something
+          cout << "elapsed time: " << elapsedTime << endl;
 
-        if(k>0)	// otherwise "if (mediandist>pPars.AutoInitPixel)" segfaults...
-        {
-          std::vector<double>::iterator first = mediandistvec.begin();
-          std::vector<double>::iterator last = mediandistvec.end();
-          std::vector<double>::iterator middle = first + std::floor((last - first) / 2);
-          std::nth_element(first, middle, last); // can specify comparator as optional 4th arg
-          double mediandist = *middle;
-          if (mediandist>pPars.AutoInitPixel)
+          if (elapsedTime.toSec() > pPars.ClosedFormDuration)
+          {
             mbUserPressedSpacebar=true;
+            cout << "Initialized command lol" << endl;
+          }
+        }
+        else
+        {
+          // calc rotation aid of SBI
+          SmallBlurryImage* pSBIsecond = new SmallBlurryImage(*mCurrentKF);
+          Vector<3> rotvec = CalcSBIRotation(mFirstKF->pSBI,pSBIsecond);
+          SO3<> rotmat = SO3<>::exp(rotvec);
+          std::vector<double> mediandistvec;
+
+          unsigned short k=0;
+          std::vector<double> medianvec;
+          medianvec.resize(mlTrails.size());
+          for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end();++i)
+          {
+            // JACK: use this code to get vector directions from image reference
+            Trail &trail = *i;
+            // compensate pixel disparity with rotation!!
+            Vector<2> firstvec = LevelZeroPos(trail.irInitialPos, level);
+            Vector<2> z1vec =  mCamera.UnProject(LevelZeroPos(trail.irCurrentPos, level));
+            Vector<3> dirvec = makeVector(z1vec[0],z1vec[1],1);
+            dirvec = rotmat.inverse()*dirvec;
+            z1vec = mCamera.Project(makeVector(dirvec[0]/dirvec[2],dirvec[1]/dirvec[2]));
+            mediandistvec.push_back(sqrt((z1vec[0]-firstvec[0])*(z1vec[0]-firstvec[0])+(z1vec[1]-firstvec[1])*(z1vec[1]-firstvec[1])));
+            ++k;
+          }
+          delete pSBIsecond;
+          // JACK: instead of mediandist, the "start" condition is elapsedTime > 3
+
+          if(k>0)	// otherwise "if (mediandist>pPars.AutoInitPixel)" segfaults...
+          {
+            std::vector<double>::iterator first = mediandistvec.begin();
+            std::vector<double>::iterator last = mediandistvec.end();
+            std::vector<double>::iterator middle = first + std::floor((last - first) / 2);
+            std::nth_element(first, middle, last); // can specify comparator as optional 4th arg
+            double mediandist = *middle;
+            if (mediandist>pPars.AutoInitPixel)
+              mbUserPressedSpacebar=true;
+          }
         }
       }
     }
@@ -285,7 +310,7 @@ Vector<3> Tracker::CalcSBIRotation(SmallBlurryImage *SBI1, SmallBlurryImage *SBI
 // Try to relocalise in case tracking was lost.
 // Returns success or failure as a bool.
 // Actually, the SBI relocaliser will almost always return true, even if
-// it has no idea where it is, so graphics will go a bit 
+// it has no idea where it is, so graphics will go a bit
 // crazy when lost. Could use a tighter SSD threshold and return more false,
 // but the way it is now gives a snappier response and I prefer it.
 bool Tracker::AttemptRecovery()
@@ -416,7 +441,7 @@ void Tracker::GUICommandHandler(string sCommand, string sParams)  // Called by t
 
   cout << "! Tracker::GUICommandHandler: unhandled command "<< sCommand << endl;
   exit(1);
-}; 
+};
 
 // Routine for establishing the initial map. This requires two spacebar presses from the user
 // to define the first two key-frames. Salient points are tracked between the two keyframes
@@ -427,7 +452,7 @@ void Tracker::TrackForInitialMap()
 {
   // MiniPatch tracking threshhold.
   //Weiss{
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   int gvnMaxSSD = pPars.MiniPatchMaxSSD;
   //static gvar3<int> gvnMaxSSD("Tracker.MiniPatchMaxSSD", 100000, SILENT);
@@ -452,6 +477,7 @@ void Tracker::TrackForInitialMap()
 
   if(mnInitialStage == TRAIL_TRACKING_STARTED)
   {
+    // JACK: we need a vector of time here
     int nGoodTrails = TrailTracking_Advance();  // This call actually tracks the trails
     if(nGoodTrails < 10) // if most trails have been wiped out, no point continuing.
     {
@@ -459,6 +485,7 @@ void Tracker::TrackForInitialMap()
       return;
     }
 
+    // JACK: branch here for CF initialization
     // If the user pressed spacebar here, use trails to run stereo and make the intial map..
     if(mbUserPressedSpacebar)
     {
@@ -477,7 +504,13 @@ void Tracker::TrackForInitialMap()
       //mMapMaker.InitFromStereo(mFirstKF, mCurrentKF, vMatches, mse3CamFromWorld);  // This will take some time!
 
       bool initret=false;
-      initret=mMapMaker.InitFromStereo(mFirstKF, mCurrentKF, vMatches, mse3CamFromWorld);  // This will take some time!
+      if (PtamParameters::varparams().ClosedFormInit)
+      {
+      }
+      else
+      {
+        initret=mMapMaker.InitFromStereo(mFirstKF, mCurrentKF, vMatches, mse3CamFromWorld);  // This will take some time!
+      }
 
       if(initret)
       {
@@ -541,7 +574,7 @@ void Tracker::TrailTracking_Start()
 
   vector<pair<double,ImageRef> > vCornersAndSTScores;
 
-  
+
   vCornersAndSTScores.reserve(1000);
   int level = PtamParameters::fixparams().InitLevel;
   for(unsigned int i=0; i<mCurrentKF->aLevels[level].vCandidates.size(); i++)  // Copy candidates into a trivially sortable vector
@@ -582,7 +615,7 @@ int Tracker::TrailTracking_Advance()
     glEnable(GL_BLEND);
     glBegin(GL_LINES);
   }
-  
+
   int level = PtamParameters::fixparams().InitLevel;
   MiniPatch BackwardsPatch;
   Level &lCurrentFrame = mCurrentKF->aLevels[level];
@@ -609,6 +642,7 @@ int Tracker::TrailTracking_Advance()
       trail.irCurrentPos = irEnd;
       nGoodTrails++;
     }
+    // JACK: if not bFound: pop it from Bearing in case we do CF
     if(mbDraw)
     {
       if(!bFound)
@@ -766,7 +800,7 @@ void Tracker::TrackMap()
   // Tunable parameters to do with the coarse tracking stage:
 
   //Weiss{
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   unsigned int gvnCoarseMin = pPars.CoarseMin;
   unsigned int gvnCoarseMax = pPars.CoarseMax;
@@ -1104,98 +1138,98 @@ int Tracker::SearchForPoints(vector<TrackerData*> &vTD, int nRange, int nSubPixI
 //by the Tukey MEstimator.
 Vector<6> Tracker::CalcPoseUpdate(vector<TrackerData*> vTD, double dOverrideSigma, bool bMarkOutliers)
 {
-	// Which M-estimator are we using?
-	int nEstimator = 0;
-	//Weiss{
-	//static std::string gvsEstimator = "Tukey";
-	const FixParams& pPars = PtamParameters::fixparams();
-	static std::string gvsEstimator = pPars.TrackerMEstimator;
-	//}
-	if(gvsEstimator == "Tukey")
-		nEstimator = 0;
-	else if(gvsEstimator == "Cauchy")
-		nEstimator = 1;
-	else if(gvsEstimator == "Huber")
-		nEstimator = 2;
-	else
-	{
-		cout << "Invalid TrackerMEstimator, choices are Tukey, Cauchy, Huber" << endl;
-		nEstimator = 0;
-		gvsEstimator = "Tukey";
-	};
+  // Which M-estimator are we using?
+  int nEstimator = 0;
+  //Weiss{
+  //static std::string gvsEstimator = "Tukey";
+  const FixParams& pPars = PtamParameters::fixparams();
+  static std::string gvsEstimator = pPars.TrackerMEstimator;
+  //}
+  if(gvsEstimator == "Tukey")
+    nEstimator = 0;
+  else if(gvsEstimator == "Cauchy")
+    nEstimator = 1;
+  else if(gvsEstimator == "Huber")
+    nEstimator = 2;
+  else
+  {
+    cout << "Invalid TrackerMEstimator, choices are Tukey, Cauchy, Huber" << endl;
+    nEstimator = 0;
+    gvsEstimator = "Tukey";
+  };
 
-	// Find the covariance-scaled reprojection error for each measurement.
-	// Also, store the square of these quantities for M-Estimator sigma squared estimation.
-	vector<double> vdErrorSquared;
-	for(unsigned int f=0; f<vTD.size(); f++)
-	{
-		TrackerData &TD = *vTD[f];
-		if(!TD.bFound)
-			continue;
-		TD.v2Error_CovScaled = TD.dSqrtInvNoise* (TD.v2Found - TD.v2Image);
-		vdErrorSquared.push_back(static_cast<double>(TD.v2Error_CovScaled * TD.v2Error_CovScaled));
-	};
+  // Find the covariance-scaled reprojection error for each measurement.
+  // Also, store the square of these quantities for M-Estimator sigma squared estimation.
+  vector<double> vdErrorSquared;
+  for(unsigned int f=0; f<vTD.size(); f++)
+  {
+    TrackerData &TD = *vTD[f];
+    if(!TD.bFound)
+      continue;
+    TD.v2Error_CovScaled = TD.dSqrtInvNoise* (TD.v2Found - TD.v2Image);
+    vdErrorSquared.push_back(static_cast<double>(TD.v2Error_CovScaled * TD.v2Error_CovScaled));
+  };
 
-	// No valid measurements? Return null update.
-	if(vdErrorSquared.size() == 0)
-		return makeVector( 0,0,0,0,0,0);
+  // No valid measurements? Return null update.
+  if(vdErrorSquared.size() == 0)
+    return makeVector( 0,0,0,0,0,0);
 
-	// What is the distribution of errors?
-	double dSigmaSquared;
-	if(dOverrideSigma > 0)
-		dSigmaSquared = dOverrideSigma; // Bit of a waste having stored the vector of square errors in this case!
-	else
-	{
-		if (nEstimator == 0)
-			dSigmaSquared = Tukey::FindSigmaSquared(vdErrorSquared);
-		else if(nEstimator == 1)
-			dSigmaSquared = Cauchy::FindSigmaSquared(vdErrorSquared);
-		else
-			dSigmaSquared = Huber::FindSigmaSquared(vdErrorSquared);
-	}
+  // What is the distribution of errors?
+  double dSigmaSquared;
+  if(dOverrideSigma > 0)
+    dSigmaSquared = dOverrideSigma; // Bit of a waste having stored the vector of square errors in this case!
+  else
+  {
+    if (nEstimator == 0)
+      dSigmaSquared = Tukey::FindSigmaSquared(vdErrorSquared);
+    else if(nEstimator == 1)
+      dSigmaSquared = Cauchy::FindSigmaSquared(vdErrorSquared);
+    else
+      dSigmaSquared = Huber::FindSigmaSquared(vdErrorSquared);
+  }
 
-	// The TooN WLSCholesky class handles reweighted least squares.
-	// It just needs errors and jacobians.
-	WLS<6> wls;
-	wls.add_prior(100.0); // Stabilising prior
-	for(unsigned int f=0; f<vTD.size(); f++)
-	{
-		TrackerData &TD = *vTD[f];
-		if(!TD.bFound)
-			continue;
-		Vector<2> &v2 = TD.v2Error_CovScaled;
-		double dErrorSq = v2 * v2;
-		double dWeight;
+  // The TooN WLSCholesky class handles reweighted least squares.
+  // It just needs errors and jacobians.
+  WLS<6> wls;
+  wls.add_prior(100.0); // Stabilising prior
+  for(unsigned int f=0; f<vTD.size(); f++)
+  {
+    TrackerData &TD = *vTD[f];
+    if(!TD.bFound)
+      continue;
+    Vector<2> &v2 = TD.v2Error_CovScaled;
+    double dErrorSq = v2 * v2;
+    double dWeight;
 
-		if(nEstimator == 0)
-			dWeight= Tukey::Weight(dErrorSq, dSigmaSquared);
-		else if(nEstimator == 1)
-			dWeight= Cauchy::Weight(dErrorSq, dSigmaSquared);
-		else
-			dWeight= Huber::Weight(dErrorSq, dSigmaSquared);
+    if(nEstimator == 0)
+      dWeight= Tukey::Weight(dErrorSq, dSigmaSquared);
+    else if(nEstimator == 1)
+      dWeight= Cauchy::Weight(dErrorSq, dSigmaSquared);
+    else
+      dWeight= Huber::Weight(dErrorSq, dSigmaSquared);
 
-		// Inlier/outlier accounting, only really works for cut-off estimators such as Tukey.
-		if(dWeight == 0.0)
-		{
-			if(bMarkOutliers)
-				TD.Point->nMEstimatorOutlierCount++;
-			continue;
-		}
-		else
-			if(bMarkOutliers)
-				TD.Point->nMEstimatorInlierCount++;
+    // Inlier/outlier accounting, only really works for cut-off estimators such as Tukey.
+    if(dWeight == 0.0)
+    {
+      if(bMarkOutliers)
+        TD.Point->nMEstimatorOutlierCount++;
+      continue;
+    }
+    else
+      if(bMarkOutliers)
+        TD.Point->nMEstimatorInlierCount++;
 
-		Matrix<2,6> &m26Jac = TD.m26Jacobian;
-		wls.add_mJ(v2[0], TD.dSqrtInvNoise * m26Jac[0], dWeight); // These two lines are currently
-		wls.add_mJ(v2[1], TD.dSqrtInvNoise * m26Jac[1], dWeight); // the slowest bit of poseits
-	}
+    Matrix<2,6> &m26Jac = TD.m26Jacobian;
+    wls.add_mJ(v2[0], TD.dSqrtInvNoise * m26Jac[0], dWeight); // These two lines are currently
+    wls.add_mJ(v2[1], TD.dSqrtInvNoise * m26Jac[1], dWeight); // the slowest bit of poseits
+  }
 
-	wls.compute();
-	//Weiss{
-	if (bMarkOutliers)	//only true for last iteration, see code above... (iter==9)
-		mmCovariances=TooN::SVD<6>(wls.get_C_inv()).get_pinv();
-	//}
-	return wls.get_mu();
+  wls.compute();
+  //Weiss{
+  if (bMarkOutliers)	//only true for last iteration, see code above... (iter==9)
+    mmCovariances=TooN::SVD<6>(wls.get_C_inv()).get_pinv();
+  //}
+  return wls.get_mu();
 }
 
 
@@ -1276,7 +1310,7 @@ void Tracker::AssessTrackingQuality()
   }
 
   //Weiss{
-  
+
   const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
   if(nTotalFound <= pPars.TrackingQualityFoundPixels || nTotalAttempted == 0)
     mTrackingQuality = BAD;
@@ -1316,7 +1350,7 @@ void Tracker::AssessTrackingQuality()
   if(mTrackingQuality==BAD)
   {
     //Weiss{
-    
+
     const ptam::PtamParamsConfig& pPars = PtamParameters::varparams();
     if (pPars.AutoInit & mMap.IsGood())
     {
@@ -1365,11 +1399,3 @@ void Tracker::command(const std::string & cmd){
     this->GUICommandHandler("KeyPress", cmd);
 }
 //}
-
-
-
-
-
-
-
-

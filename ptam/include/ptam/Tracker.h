@@ -1,20 +1,20 @@
 //-*- C++ -*-
 // Copyright 2008 Isis Innovation Limited
-// 
+//
 // This header declares the Tracker class.
 // The Tracker is one of main components of the system,
 // and is responsible for determining the pose of a camera
-// from a video feed. It uses the Map to track, and communicates 
+// from a video feed. It uses the Map to track, and communicates
 // with the MapMaker (which runs in a different thread)
 // to help construct this map.
 //
-// Initially there is no map, so the Tracker also has a mode to 
-// do simple patch tracking across a stereo pair. This is handled 
-// by the TrackForInitialMap() method and associated sub-methods. 
+// Initially there is no map, so the Tracker also has a mode to
+// do simple patch tracking across a stereo pair. This is handled
+// by the TrackForInitialMap() method and associated sub-methods.
 // Once there is a map, TrackMap() is used.
 //
 // Externally, the tracker should be used by calling TrackFrame()
-// with every new input video frame. This then calls either 
+// with every new input video frame. This then calls either
 // TrackForInitialMap() or TrackMap() as appropriate.
 //
 
@@ -39,14 +39,20 @@ struct Trail    // This struct is used for initial correspondences of the first 
   CVD::ImageRef irInitialPos;
 };
 
+struct Bearing    // Position of one corner over multiple observations, used by Closed Form
+{
+  MiniPatch mPatch;
+  std::vector<CVD::ImageRef> irPos;
+};
+
 class Tracker
 {
 public:
   Tracker(CVD::ImageRef irVideoSize, const ATANCamera &c, Map &m, MapMaker &mm);
 
   // TrackFrame is the main working part of the tracker: call this every frame.
-  void TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw); 
-  void TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const TooN::SO3<double> & imuOrientation);
+  void TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const ros::Time &timestamp);
+  void TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const TooN::SO3<double> & imuOrientation, const ros::Time &timestamp);
 
   inline SE3<> GetCurrentPose() { return mse3CamFromWorld;}
   //Weiss{
@@ -60,6 +66,9 @@ public:
 
   void command(const std::string & params);
   std::list<Trail> & getTrails(){return  mlTrails;};
+  std::list<Bearing> & getBearings(){return  mlBearings;};
+  ros::Time initialTimestamp;
+
   bool getTrailTrackingStarted(){return mnInitialStage == TRAIL_TRACKING_STARTED;};
   bool getTrailTrackingComplete(){return mnInitialStage == TRAIL_TRACKING_COMPLETE;};
   CVD::Image<TooN::Vector<2> > & ComputeGrid();             // Computes the reference grid;
@@ -81,12 +90,13 @@ protected:
 
   // The following members are used for initial map tracking (to get the first stereo pair and correspondences):
   void TrackForInitialMap();      // This is called by TrackFrame if there is not a map yet.
-  enum {TRAIL_TRACKING_NOT_STARTED, 
+  enum {TRAIL_TRACKING_NOT_STARTED,
     TRAIL_TRACKING_STARTED,
     TRAIL_TRACKING_COMPLETE} mnInitialStage;  // How far are we towards making the initial map?
     void TrailTracking_Start();     // First frame of initial trail tracking. Called by TrackForInitialMap.
     int  TrailTracking_Advance();   // Steady-state of initial trail tracking. Called by TrackForInitialMap.
     std::list<Trail> mlTrails;      // Used by trail tracking
+    std::list<Bearing> mlBearings;      // Used by closed form for map initialization
     KeyFrame::Ptr mFirstKF;              // First of the stereo pair
     KeyFrame::Ptr mPreviousFrameKF;      // Used by trail tracking to check married matches
 
@@ -159,9 +169,3 @@ protected:
 };
 
 #endif
-
-
-
-
-
-
