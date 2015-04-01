@@ -629,8 +629,10 @@ int Tracker::TrailTracking_Advance()
   Level &lPreviousFrame = mPreviousFrameKF->aLevels[level];
 
   list<Bearing>::iterator bearIt = mlBearings.begin();
-  for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end(); ++i)
+  for(list<Trail>::iterator i = mlTrails.begin(); i!=mlTrails.end();)
   {
+    list<Trail>::iterator nextItTrail = i; nextItTrail++;
+    list<Bearing>::iterator nextItBear = bearIt; nextItBear++;
 
     Trail &trail = *i;
     Bearing &bearing = *bearIt;
@@ -688,13 +690,12 @@ int Tracker::TrailTracking_Advance()
     }
     if(!bFound) // Erase from list of trails if not found this frame.
     {
-      i = mlTrails.erase(i);
-      i--;
+      mlTrails.erase(i);
       (*bearIt).clear();
-      bearIt = mlBearings.erase(bearIt);
-      bearIt--;
+      mlBearings.erase(bearIt);
     }
-    bearIt++;
+    i = nextItTrail;
+    bearIt = nextItBear;
   }
   if(mbDraw)
     glEnd();
