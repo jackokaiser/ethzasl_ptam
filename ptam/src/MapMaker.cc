@@ -237,11 +237,25 @@ Vector<3> MapMaker::ReprojectPoint(SE3<> se3AfromB, const Vector<2> &v2A, const 
   return project(v4Smallest);
 }
 
-list< vector< Vector<3> > > UnProjectFeatures(const list<vector<ImageRef> >& features)
+list< vector< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRef> >& features)
 {
-  // mCamera.UnProject(vTrailMatches[i].second)
-  cout<<"what?"<<endl;
-  return list< vector< Vector<3> > >();
+  list< vector< Vector<3> > > ret;
+  vector<ImageRef> iFeature;
+  for (list<vector<ImageRef> >::const_iterator itFeature = features.begin(); itFeature != features.end(); ++itFeature)
+  {
+    iFeature = *itFeature;
+    vector<Vector<3> > featureMeasurments;
+    featureMeasurments.reserve(iFeature.size());
+    ret.push_back(featureMeasurments);
+    for (vector<ImageRef>::iterator itBearing = iFeature.begin(); itBearing != iFeature.end(); ++itBearing)
+    {
+      Vector<2> unprojected = mCamera.UnProject(*itBearing);
+      Vector<3> opticalRay = makeVector(unprojected[0], unprojected[1], 1);
+      normalize(opticalRay);
+      featureMeasurments.push_back(opticalRay);
+    }
+  }
+  return ret;
 }
 
 bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
