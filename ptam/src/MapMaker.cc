@@ -278,40 +278,50 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   SE3<> &se3TrackerPose)
 {
   int nObs = features.front().size();
-  int nFeatures = features.size();
+  // int nFeatures = features.size();
+  int nFeatures = 3;
+  cout << "Initialization with Closed-Form" <<endl<< "#features: "<< nFeatures <<" #observations: "<< nObs << endl;
   mCamera.SetImageSize(kF->aLevels[0].im.size());
 
   vector< list< Vector<3> > > opticalRays = UnProjectFeatures(features);
   // JACK: you may want to drop some camera images to increase speed
 
-  int nEquations = 3*(nFeatures - 1)*nObs;
-  int nUnknowns = nObs * nFeatures + 6;
+  int nEquations = 3*(nObs - 1)*nFeatures;
+  int nUnknowns = nFeatures * nObs + 6;
+  cout << "Size of linear system: "<<endl<<nEquations<<"x"<<nUnknowns<<endl;
+
   Matrix<> A = Zeros(nEquations, nUnknowns);
   Vector<> b = Zeros(nUnknowns);
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
-  int i=0;
-  Vector<3> ray;
 
   // for all first measurements
-  for (list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin(); featureIt != opticalRays[0].end(); ++featureIt, ++i)
+  list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
+  for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
   {
-    ray = *featureIt;
-    mu1[i*3][i] = ray[0];
-    mu1[i*3 + 1][i] = ray[1];
-    mu1[i*3 + 2][i] = ray[2];
-// mu1.slice(i*3, i, 3, 1).T()[0] = (*featureIt)[0];
+    mu1.slice(iFeature*3, iFeature, 3, 1) = (*featureIt).as_col();
   }
-  cout << mu1 << endl;
-  // mui= bearData(1).features;
-  //   MU1= [mui(:,1), repmat(z3,1,nFeatures - 1 )];
-  //   for iFeatures=2:nFeatures
-  //       MU1= [MU1; repmat(z3,1,iFeatures-1), mui(:,iFeatures), repmat(z3,1,nFeatures-iFeatures)];
-  //   end;
 
-  for (int i=0; i<nObs; i++)
+  // for all observations after the initial one
+  for (int iObs=1; iObs<nObs; iObs++)
   {
+    int rowIdx = 3 * nFeatures * (iObs - 1);
+    int colIdx = 2 + nFeatures * iObs;
+    cout << rowIdx << ","<<colIdx<< endl;
+    A.slice(rowIdx, 2, nFeatures*3, nFeatures) = mu1;
+    // Matrix<> muj = A.slice(rowIdx, colIdx, nFeatures*3, nFeatures);
+
+    list<Vector<3> >::iterator bearIt = opticalRays[iObs].begin();
+    // for all features at this observation
+    for (int iFeature = 0; iFeature < nFeatures; iFeature++, bearIt++)
+    {
+      // JACK: need to rotate them
+      A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = (*bearIt).as_col();
+    }
   }
+
+  cout << A << endl;
+
   return false;
 }
 

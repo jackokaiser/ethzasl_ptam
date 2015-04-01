@@ -235,7 +235,7 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
         {
           ros::Duration elapsedTime = timestamp - initialTimestamp;
           // JACK: also check number of camera imgs to be greater than something
-          if (elapsedTime.toSec() > pPars.ClosedFormDuration)
+          if (elapsedTime.toSec() > pPars.ClosedFormDuration || bearingTimestamps.size() > 3)
           {
             mbUserPressedSpacebar=true;
           }
