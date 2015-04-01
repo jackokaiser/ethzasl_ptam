@@ -52,7 +52,7 @@ public:
                       std::vector<std::pair<CVD::ImageRef, CVD::ImageRef> > &vMatches,
                       SE3<> &se3CameraPos);
 
-  std::list< std::vector< TooN::Vector<3> > > UnProjectFeatures(const std::list<std::vector<CVD::ImageRef> >& features);
+  std::vector<std::list< TooN::Vector<3> > > UnProjectFeatures(const std::list<std::vector<CVD::ImageRef> >& features);
 
   bool InitFromClosedForm(KeyFrame::Ptr kF,
                           KeyFrame::Ptr kS,

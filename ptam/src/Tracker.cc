@@ -235,8 +235,6 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
         {
           ros::Duration elapsedTime = timestamp - initialTimestamp;
           // JACK: also check number of camera imgs to be greater than something
-          cout << "elapsed time: " << elapsedTime << endl;
-
           if (elapsedTime.toSec() > pPars.ClosedFormDuration)
           {
             mbUserPressedSpacebar=true;
@@ -647,13 +645,17 @@ int Tracker::TrailTracking_Advance()
       ImageRef irBackWardsFound = irEnd;
       bFound = BackwardsPatch.FindPatch(irBackWardsFound, lPreviousFrame.im, 10, lPreviousFrame.vCorners);
       if((irBackWardsFound - irStart).mag_squared() > 2)
+      {
         bFound = false;
+      }
+      else
+      {
+        trail.irCurrentPos = irEnd;
+        // the bearings add the new image ref instead of replacing it
+        bearing.push_back(irEnd);
 
-      trail.irCurrentPos = irEnd;
-      // the bearings add the new image ref instead of replacing it
-      bearing.push_back(irEnd);
-
-      nGoodTrails++;
+        nGoodTrails++;
+      }
     }
     if(mbDraw)
     {
@@ -687,8 +689,10 @@ int Tracker::TrailTracking_Advance()
     if(!bFound) // Erase from list of trails if not found this frame.
     {
       i = mlTrails.erase(i);
+      i--;
       (*bearIt).clear();
       bearIt = mlBearings.erase(bearIt);
+      bearIt--;
     }
     bearIt++;
   }

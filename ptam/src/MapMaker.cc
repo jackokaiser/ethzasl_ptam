@@ -237,22 +237,33 @@ Vector<3> MapMaker::ReprojectPoint(SE3<> se3AfromB, const Vector<2> &v2A, const 
   return project(v4Smallest);
 }
 
-list< vector< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRef> >& features)
+vector<list< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRef> >& features)
 {
-  list< vector< Vector<3> > > ret;
+  int nObs = features.front().size();
+  vector<list< Vector<3> > > ret;
+  ret.reserve(nObs);
+
+  // for all observations, create a list of all features
+  for (int i=0; i<nObs; ++i)
+  {
+    ret.push_back(list< Vector<3> >());
+  }
+
   vector<ImageRef> iFeature;
+  // for all features
   for (list<vector<ImageRef> >::const_iterator itFeature = features.begin(); itFeature != features.end(); ++itFeature)
   {
     iFeature = *itFeature;
-    vector<Vector<3> > featureMeasurments;
-    featureMeasurments.reserve(iFeature.size());
-    ret.push_back(featureMeasurments);
-    for (vector<ImageRef>::iterator itBearing = iFeature.begin(); itBearing != iFeature.end(); ++itBearing)
+    int iObs = 0;
+    // for all measurements of that feature
+    for (vector<ImageRef>::iterator itBearing = iFeature.begin(); itBearing != iFeature.end(); ++itBearing, ++iObs)
     {
+      // unproject that measurement
       Vector<2> unprojected = mCamera.UnProject(*itBearing);
       Vector<3> opticalRay = makeVector(unprojected[0], unprojected[1], 1);
       normalize(opticalRay);
-      featureMeasurments.push_back(opticalRay);
+      // append it to the correct list
+      ret[iObs].push_back(opticalRay);
     }
   }
   return ret;
@@ -268,18 +279,30 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 {
   int nObs = features.front().size();
   int nFeatures = features.size();
-
-  list< vector < Vector<3> > > bearingVectors = UnProjectFeatures(features);
-
-  // JACK: you may want to drop some camera images to increase speed
   mCamera.SetImageSize(kF->aLevels[0].im.size());
 
+  vector< list< Vector<3> > > opticalRays = UnProjectFeatures(features);
+  // JACK: you may want to drop some camera images to increase speed
 
   int nEquations = 3*(nFeatures - 1)*nObs;
   int nUnknowns = nObs * nFeatures + 6;
   Matrix<> A = Zeros(nEquations, nUnknowns);
   Vector<> b = Zeros(nUnknowns);
 
+  Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
+  int i=0;
+  Vector<3> ray;
+
+  // for all first measurements
+  for (list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin(); featureIt != opticalRays[0].end(); ++featureIt, ++i)
+  {
+    ray = *featureIt;
+    mu1[i*3][i] = ray[0];
+    mu1[i*3 + 1][i] = ray[1];
+    mu1[i*3 + 2][i] = ray[2];
+// mu1.slice(i*3, i, 3, 1).T()[0] = (*featureIt)[0];
+  }
+  cout << mu1 << endl;
   // mui= bearData(1).features;
   //   MU1= [mui(:,1), repmat(z3,1,nFeatures - 1 )];
   //   for iFeatures=2:nFeatures
