@@ -280,6 +280,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   int nObs = features.front().size();
   // int nFeatures = features.size();
   int nFeatures = 3;
+  // JACK: remove first bearing timespamps to all other timestamps
+
   cout << "Initialization with Closed-Form" <<endl<< "#features: "<< nFeatures <<" #observations: "<< nObs << endl;
   mCamera.SetImageSize(kF->aLevels[0].im.size());
 
@@ -294,6 +296,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   Vector<> b = Zeros(nUnknowns);
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
+  Matrix<3> Tj = Identity;
+  float tj;
 
   // for all first measurements
   list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
@@ -305,12 +309,22 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   // for all observations after the initial one
   for (int iObs=1; iObs<nObs; iObs++)
   {
+    tj = bearingTimestamps[iObs].toSec();
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
-    cout << rowIdx << ","<<colIdx<< endl;
-    A.slice(rowIdx, 6, nFeatures*3, nFeatures) = mu1;
-    // Matrix<> muj = A.slice(rowIdx, colIdx, nFeatures*3, nFeatures);
 
+    /////// Tj submatrix
+    Tj = Identity * -.5 * tj * tj;
+    for (int iFeature = 0; iFeature < nFeatures; iFeature++)
+    {
+      A.slice(rowIdx, 0, 3, 3) = Tj;
+    }
+
+
+    // first feature observation (mu1)
+    A.slice(rowIdx, 6, nFeatures*3, nFeatures) = mu1;
+
+    // current feature observation (muj)
     list<Vector<3> >::iterator bearIt = opticalRays[iObs].begin();
     // for all features at this observation
     for (int iFeature = 0; iFeature < nFeatures; iFeature++, bearIt++)
