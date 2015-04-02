@@ -39,6 +39,7 @@ public:
   void imuCallback(const sensor_msgs::ImuConstPtr & msg);
 
   void getImuTransform (TooN::SO3<double>& lastOrientation, TooN::SO3<double>& newOrientation);
+  ImuQueue getMsgs ();
   void computeImuTransform(const tf::TransformListener& tf_sub, const ros::Time& timestamp, const std::string& frame_id);
   bool transformQuaternion(const tf::TransformListener& tf_sub, const std::string & target_frame, const std_msgs::Header & header,
                            const geometry_msgs::Quaternion & _q_in, TooN::SO3<double> & r_out);

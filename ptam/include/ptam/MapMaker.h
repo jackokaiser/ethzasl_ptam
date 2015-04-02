@@ -53,13 +53,14 @@ public:
                       SE3<> &se3CameraPos);
 
   std::vector<std::list< TooN::Vector<3> > > UnProjectFeatures(const std::list<std::vector<CVD::ImageRef> >& features);
+  void initializeImuIntegration(std::queue<sensor_msgs::Imu>& imuMsgs);
+  void integrateImuUpToTime(float initialTime, float tObs, std::queue<sensor_msgs::Imu>& imuMsgs, TooN::Matrix<3>& rotationGyro);
+  float formatTimestamps (const std::vector<ros::Time>& timestamps, std::vector<float>& ret);
 
   bool InitFromClosedForm(KeyFrame::Ptr kF,
                           KeyFrame::Ptr kS,
                           const std::list< std::vector<CVD::ImageRef> >& features,
                           const std::vector<ros::Time>& bearingTimestamps,
-                          const std::vector<sensor_msgs::Imu>& imu_msgs,
-                          const std::vector<ros::Time>& imuTimestamps,
                           SE3<> &se3TrackerPose);
 
   bool InitFromStereo_OLD(KeyFrame::Ptr kFirst, KeyFrame::Ptr kSecond,  // EXPERIMENTAL HACK
@@ -104,6 +105,8 @@ protected:
   bool AddPointEpipolar(KeyFrame::Ptr kSrc, KeyFrame::Ptr kTarget, int nLevel, int nCandidate);
   // Returns point in ref frame B
   Vector<3> ReprojectPoint(SE3<> se3AfromB, const Vector<2> &v2A, const Vector<2> &v2B);
+
+  sensor_msgs::Imu lastImu;
 
   // Bundle adjustment functions:
   void BundleAdjust(std::set<KeyFrame::Ptr>, std::set<KeyFrame::Ptr>, std::set<boost::shared_ptr<MapPoint> >, bool);

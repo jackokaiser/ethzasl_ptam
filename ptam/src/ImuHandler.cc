@@ -19,6 +19,11 @@ void ImuHandler::imuCallback(const sensor_msgs::ImuConstPtr & msg)
   }
 }
 
+ImuHandler::ImuQueue ImuHandler::getMsgs()
+{
+  return imuMsgs;
+}
+
 void ImuHandler::flushMsgs()
 {
   ImuQueue empty;

@@ -5,6 +5,7 @@
 #include "ptam/PatchFinder.h"
 #include "ptam/SmallMatrixOpts.h"
 #include "ptam/HomographyInit.h"
+#include "ptam/ImuHandler.h"
 
 #include <cvd/vector_image_ref.h>
 #include <cvd/vision.h>
@@ -39,7 +40,7 @@ using namespace TooN;
 // Constructor sets up internal reference variable to Map.
 // Most of the intialisation is done by Reset()..
 MapMaker::MapMaker(Map& m, const ATANCamera &cam, ros::NodeHandle& nh)
-: mMap(m), mCamera(cam), octomap_interface(nh)
+    : mMap(m), mCamera(cam), octomap_interface(nh)
 {
   mbResetRequested = false;
   Reset();
@@ -269,7 +270,7 @@ vector<list< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRe
   return ret;
 }
 
-float formatTimestamps (const vector<ros::Time>& timestamps, vector<float>& ret) {
+float MapMaker::formatTimestamps (const vector<ros::Time>& timestamps, vector<float>& ret) {
   float t0 = timestamps[0].toSec();
   for (vector<ros::Time>::const_iterator it = timestamps.begin(); it != timestamps.end(); it++)
   {
@@ -279,14 +280,48 @@ float formatTimestamps (const vector<ros::Time>& timestamps, vector<float>& ret)
   return t0;
 }
 
+void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs) {
+  if (imuMsgs.empty())
+  {
+    cout << "Closed-Form: no imu messages to integrate" << endl;
+    return;
+  }
+  lastImu = imuMsgs.front();
+  imuMsgs.pop();
+}
+
+void MapMaker::integrateImuUpToTime(float initialTime, float tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro)
+{
+
+  Vector<3> angVel;
+  Matrix<3> iM;
+  sensor_msgs::Imu imu;
+
+  while (!imuMsgs.empty() && (imuMsgs.front().header.stamp.toSec() - initialTime) < tObs)
+  {
+    angVel = makeVector(lastImu.angular_velocity.x, lastImu.angular_velocity.y, lastImu.angular_velocity.z);
+    iM = Data(0,         angVel[2],     -angVel[1],
+              -angVel[2],   0,          angVel[0],
+              angVel[1], -angVel[0],        0    );
+
+    imu = imuMsgs.front();
+    float dt = imu.header.stamp.toSec() - lastImu.header.stamp.toSec();
+    rotationGyro = rotationGyro * (Identity + iM * dt);
+
+    imuMsgs.pop();
+    lastImu = imu;
+  }
+}
+
 bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   KeyFrame::Ptr kS,
                                   const list<vector<CVD::ImageRef> >& features,
                                   const vector<ros::Time>& bearingTimestamps,
-                                  const vector<sensor_msgs::Imu>& imu_msgs,
-                                  const vector<ros::Time>& imuTimestamps,
                                   SE3<> &se3TrackerPose)
 {
+  queue<sensor_msgs::Imu> imuMsgs = ImuHandler::getInstance().getMsgs();
+  initializeImuIntegration(imuMsgs);
+
   int nObs = features.front().size();
   // int nFeatures = features.size();
   int nFeatures = 3;
@@ -309,6 +344,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
   Matrix<3> Tj = Identity;
+  Matrix<3> rotationGyro = Identity;
 
   // build mu1 matrix with all first measurements
   list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
@@ -320,6 +356,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   // for all observations after the initial one
   for (int iObs=1; iObs<nObs; iObs++)
   {
+    integrateImuUpToTime(initialTime, tObs[iObs], imuMsgs, rotationGyro);
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
 
@@ -365,7 +402,7 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
 
   mCamera.SetImageSize(kF->aLevels[0].im.size());
 
-//Weiss{
+  //Weiss{
   if(vTrailMatches.size()<4)
   {
     ROS_WARN_STREAM("Too few matches to init.");
@@ -519,13 +556,13 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
     //}
   }
 
-//Weiss{
+  //Weiss{
   if(mMap.vpPoints.size()<4)
   {
     ROS_WARN_STREAM("Too few map points to init.");
     return false;
   }
-//}
+  //}
 
   mMap.vpKeyFrames.push_back(pkFirst);
   mMap.vpKeyFrames.push_back(pkSecond);
@@ -538,7 +575,7 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
   // Estimate the feature depth distribution in the first two key-frames
   // (Needed for epipolar search)
 
-//Weiss{
+  //Weiss{
   if(!RefreshSceneDepth(pkFirst))
   {
     ROS_WARN_STREAM("Something is seriously wrong with the first KF.");
@@ -596,8 +633,8 @@ bool MapMaker::InitFromStereo(KeyFrame::Ptr kF,
   mMessageForUser << "  MapMaker: made initial map with " << mMap.vpPoints.size() << " points." << endl;
 
   //slynen octomap_interface{
-    octomap_interface.addKeyFrame(pkFirst);
-    octomap_interface.addKeyFrame(pkSecond);
+  octomap_interface.addKeyFrame(pkFirst);
+  octomap_interface.addKeyFrame(pkSecond);
   //}
 
   return true;
@@ -667,7 +704,7 @@ void MapMaker::ApplyGlobalTransformationToMap(SE3<> se3NewFromOld)
   for(unsigned int i=0; i<mMap.vpKeyFrames.size(); i++)
     mMap.vpKeyFrames[i]->se3CfromW = mMap.vpKeyFrames[i]->se3CfromW * se3NewFromOld.inverse();
 
-//  SO3<> so3Rot = se3NewFromOld.get_rotation();
+  //  SO3<> so3Rot = se3NewFromOld.get_rotation();
   for(unsigned int i=0; i<mMap.vpPoints.size(); i++)
   {
     mMap.vpPoints[i]->v3WorldPos =
@@ -1210,7 +1247,7 @@ void MapMaker::BundleAdjust(set<KeyFrame::Ptr> sAdjustSet, set<KeyFrame::Ptr> sF
     // This is probably because the initial stereo was messed up.
     // Get rid of this map and start again!
     mMessageForUser << "!! MapMaker: Cholesky failure in bundle adjust. " << endl
-        << "   The map is probably corrupt: Ditching the map. " << endl;
+                    << "   The map is probably corrupt: Ditching the map. " << endl;
     mbResetRequested = true;
     return;
   }
@@ -1289,7 +1326,7 @@ bool MapMaker::ReFind_Common(KeyFrame::Ptr k, MapPoint::Ptr p)
   // abort if either a measurement is already in the map, or we've
   // decided that this point-kf combo is beyond redemption
   if(p->pMMData->sMeasurementKFs.count(k)
-      || p->pMMData->sNeverRetryKFs.count(k))
+     || p->pMMData->sNeverRetryKFs.count(k))
     return false;
 
   static PatchFinder Finder;
@@ -1461,8 +1498,8 @@ SE3<> MapMaker::CalcPlaneAligner()
       nC = rand()%nPoints;
 
     Vector<3> v3Mean = 0.33333333 * (mMap.vpPoints[nA]->v3WorldPos +
-        mMap.vpPoints[nB]->v3WorldPos +
-        mMap.vpPoints[nC]->v3WorldPos);
+                                     mMap.vpPoints[nB]->v3WorldPos +
+                                     mMap.vpPoints[nC]->v3WorldPos);
 
     Vector<3> v3CA = mMap.vpPoints[nC]->v3WorldPos  - mMap.vpPoints[nA]->v3WorldPos;
     Vector<3> v3BA = mMap.vpPoints[nB]->v3WorldPos  - mMap.vpPoints[nA]->v3WorldPos;

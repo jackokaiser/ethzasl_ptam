@@ -503,11 +503,9 @@ void Tracker::TrackForInitialMap(const ros::Time& timestamp)
       bool initret=false;
       if (PtamParameters::varparams().ClosedFormInit)
       {
-        std::vector<sensor_msgs::Imu> imuData;
         std::vector<ros::Time> imuTimestamps;
         initret=mMapMaker.InitFromClosedForm(mFirstKF, mCurrentKF,
-                                             mlBearings, bearingTimestamps,
-                                             imuData, imuTimestamps, mse3CamFromWorld);
+                                             mlBearings, bearingTimestamps, mse3CamFromWorld);
       }
       else
       {
