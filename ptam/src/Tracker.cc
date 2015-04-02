@@ -6,6 +6,7 @@
 #include "ptam/SmallMatrixOpts.h"
 #include "ptam/PatchFinder.h"
 #include "ptam/TrackerData.h"
+#include "ptam/ImuHandler.h"
 #include <ptam/Params.h>
 
 #include <cvd/utility.h>
@@ -99,12 +100,6 @@ void Tracker::Reset()
   mnFrame=0;
   mv6CameraVelocity = Zeros;
   mbJustRecoveredSoUseCoarse = false;
-}
-
-void Tracker::TrackFrame(CVD::Image<CVD::byte> &imFrame, bool bDraw, const TooN::SO3<> & imu, const ros::Time &timestamp){
-  mso3CurrentImu = imu;
-  TrackFrame(imFrame, bDraw, timestamp);
-  mso3LastImu = mso3CurrentImu;
 }
 
 
@@ -226,7 +221,6 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
       if(mnInitialStage == TRAIL_TRACKING_NOT_STARTED)
       {
         mbUserPressedSpacebar=true;
-        initialTimestamp = timestamp;
         cout << "initialized timestamp: " << initialTimestamp << endl;
       }
       else if(mnInitialStage == TRAIL_TRACKING_STARTED)
@@ -465,6 +459,12 @@ void Tracker::TrackForInitialMap(const ros::Time& timestamp)
     if(mbUserPressedSpacebar)  // First spacebar = this is the first keyframe
     {
       mbUserPressedSpacebar = false;
+      initialTimestamp = timestamp;
+      if (pPars.ClosedFormInit)
+      {
+        ImuHandler::getInstance().flushMsgs();
+        ImuHandler::getInstance().unsetLimitImuQueue();
+      }
       TrailTracking_Start();
       mnInitialStage = TRAIL_TRACKING_STARTED;
     }
@@ -516,6 +516,12 @@ void Tracker::TrackForInitialMap(const ros::Time& timestamp)
 
       if(initret)
       {
+        if (pPars.ClosedFormInit)
+        {
+          ImuHandler::getInstance().flushMsgs();
+          ImuHandler::getInstance().setLimitImuQueue(100);
+        }
+
         if (mAutoreset)
         {
           std::vector<double> medianvec1, medianvec2;
@@ -1288,6 +1294,8 @@ void Tracker::ApplyMotionModel()
   }
   else if(vp.MotionModelSource == ptam::PtamParams_MM_IMU)
   {
+    ImuHandler::getInstance().getImuTransform(mso3LastImu, mso3CurrentImu);
+
     //
     v6Velocity.slice<3,3>() = (mso3LastImu*mso3CurrentImu.inverse()).ln();
     //                v6Velocity[0] = 0.0;

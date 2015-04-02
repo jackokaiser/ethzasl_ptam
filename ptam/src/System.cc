@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "ptam/ATANCamera.h"
 #include "ptam/MapMaker.h"
+#include "ptam/ImuHandler.h"
 #include "ptam/Tracker.h"
 //#include "ptam/ARDriver.h"
 #include "ptam/MapViewer.h"
@@ -23,14 +24,14 @@ using namespace GVars3;
 System::System() :
       nh_("vslam"), image_nh_(""), first_frame_(true)
 {
-
+  ImuHandler::getInstance().setCollectImuMsg(true);
   pub_pose_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped> ("pose", 1);
   pub_pose_world_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped> ("pose_world", 1);
   pub_info_ = nh_.advertise<ptam_com::ptam_info> ("info", 1);
   srvPC_ = nh_.advertiseService("pointcloud", &System::pointcloudservice,this);
   srvKF_ = nh_.advertiseService("keyframes", &System::keyframesservice,this);
 
-  sub_imu_ = nh_.subscribe("imu", 100, &System::imuCallback, this);
+  sub_imu_ = nh_.subscribe("imu", 100, &ImuHandler::imuCallback, &ImuHandler::getInstance());
   sub_kb_input_ = nh_.subscribe("key_pressed", 100, &System::keyboardCallback, this);
 
   image_nh_.setCallbackQueue(&image_queue_);
@@ -101,23 +102,6 @@ void System::imageCallback(const sensor_msgs::ImageConstPtr & img)
     first_frame_ = false;
   }
 
-  TooN::SO3<double> imu_orientation;
-  if (varParams.MotionModelSource == ptam::PtamParams_MM_IMU)
-  {
-    sensor_msgs::Imu imu;
-
-
-    if (!findClosest(img->header.stamp, imu_msgs_, &imu, 0.01))
-    {
-      ROS_WARN("no imu match, skipping frame");
-      return;
-    }
-    if (!transformQuaternion(img->header.frame_id, imu.header, imu.orientation, imu_orientation))
-    {
-      return;
-    }
-  }
-
 
 //  -------------------
   // TODO: avoid copy, by calling TrackFrame, with the ros image, because there is another copy inside TrackFrame
@@ -138,11 +122,21 @@ void System::imageCallback(const sensor_msgs::ImageConstPtr & img)
     tracker_draw = !bDrawMap;
   }
 
-  if (varParams.ClosedFormInit) {
-    // collect IMU data
+  if (!(varParams.MotionModelSource == ptam::PtamParams_MM_IMU) && !(varParams.ClosedFormInit))
+  {
+    ImuHandler::getInstance().flushMsgs();
+    ImuHandler::getInstance().setCollectImuMsg(false);
+  }
+  else
+  {
+    ImuHandler::getInstance().setCollectImuMsg(true);
+    if (varParams.MotionModelSource == ptam::PtamParams_MM_IMU)
+    {
+      ImuHandler::getInstance().computeImuTransform(tf_sub_, img->header.stamp, img->header.frame_id);
+    }
   }
 
-  mpTracker->TrackFrame(img_bw_, tracker_draw, imu_orientation, img->header.stamp);
+  mpTracker->TrackFrame(img_bw_, tracker_draw, img->header.stamp);
 
   publishPoseAndInfo(img->header);
 
@@ -181,70 +175,11 @@ void System::imageCallback(const sensor_msgs::ImageConstPtr & img)
 }
 
 
-void System::imuCallback(const sensor_msgs::ImuConstPtr & msg)
-{
-  imu_msgs_.push(*msg);
-  if (imu_msgs_.size() > 100)
-    imu_msgs_.pop();
-}
-
-template<class T>
-bool System::findClosest(const ros::Time & timestamp, std::queue<T> & queue, T * obj, const double & max_delay)
-{
-  double best_dt(1e9);
-  double tmp_dt;
-  //  size_t qs_before = queue.size();
-  //  int i = 0;
-  while (!queue.empty())
-  {
-    const T & curr_obj = queue.front();
-    tmp_dt = (timestamp - curr_obj.header.stamp).toSec();
-
-    if (tmp_dt < -max_delay)
-      break;
-    if (std::abs(tmp_dt) < best_dt)
-    {
-      best_dt = std::abs(tmp_dt);
-      *obj = curr_obj;
-      //      i++;
-    }
-    queue.pop();
-  }
-  if (best_dt > max_delay)
-  {
-    //    ROS_WARN("dt(%f) > 0.01 qs:%d, %d/%d", best_dt, queue.size(), qs_before, i);
-    return false;
-  }
-  else
-  {
-    return true;
-  };
-}
-
 
 void System::keyboardCallback(const std_msgs::StringConstPtr & kb_input){
   mpTracker->command(kb_input->data);
 }
 
-bool System::transformQuaternion(const std::string & target_frame, const std_msgs::Header & header,
-                                 const geometry_msgs::Quaternion & _q_in, TooN::SO3<double> & r_out)
-{
-  geometry_msgs::QuaternionStamped q_in, q_out;
-  q_in.header = header;
-  q_in.quaternion = _q_in;
-  try
-  {
-    tf_sub_.transformQuaternion(target_frame, q_in, q_out);
-    quaternionToRotationMatrix(q_out.quaternion, r_out);
-    return true;
-  }
-  catch (tf::TransformException & e)
-  {
-    ROS_WARN_STREAM("could not transform quaternion: "<<e.what());
-    return false;
-  }
-  return true;
-}
 
 bool System::transformPoint(const std::string & target_frame, const std_msgs::Header & header,
                             const geometry_msgs::Point & _p_in, TooN::Vector<3> & _p_out)
@@ -584,39 +519,6 @@ bool System::keyframesservice(ptam_com::KeyFrame_srvRequest & req, ptam_com::Key
 
 //}
 
-void System::quaternionToRotationMatrix(const geometry_msgs::Quaternion & q, TooN::SO3<double> & R)
-{
-  // stolen from Eigen3 and adapted to TooN
-
-  TooN::Matrix<3, 3, double> res;
-
-  const double tx = 2 * q.x;
-  const double ty = 2 * q.y;
-  const double tz = 2 * q.z;
-  const double twx = tx * q.w;
-  const double twy = ty * q.w;
-  const double twz = tz * q.w;
-  const double txx = tx * q.x;
-  const double txy = ty * q.x;
-  const double txz = tz * q.x;
-  const double tyy = ty * q.y;
-  const double tyz = tz * q.y;
-  const double tzz = tz * q.z;
-
-  res(0, 0) = 1 - (tyy + tzz);
-  res(0, 1) = txy - twz;
-  res(0, 2) = txz + twy;
-  res(1, 0) = txy + twz;
-  res(1, 1) = 1 - (txx + tzz);
-  res(1, 2) = tyz - twx;
-  res(2, 0) = txz - twy;
-  res(2, 1) = tyz + twx;
-  res(2, 2) = 1 - (txx + tyy);
-
-  R = res;
-
-  //  R = TooN::SO3<double>::exp(TooN::makeVector<double>(q.x, q.y, q.z) * acos(q.w) * 2.0 / sqrt(q.x * q.x + q.y * q.y + q.z * q.z));
-}
 
 
 

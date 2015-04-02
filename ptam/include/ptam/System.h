@@ -45,7 +45,6 @@ class MapViewer;
 
 class System
 {
-  typedef std::queue<sensor_msgs::Imu> ImuQueue;
   typedef std::queue<geometry_msgs::PoseWithCovarianceStamped> PoseQueue;
 
 public:
@@ -69,8 +68,6 @@ private:
 
   ros::CallbackQueue image_queue_;
 
-  ImuQueue imu_msgs_;
-
   bool first_frame_;
 
   GLWindow2 *mGLWindow;
@@ -79,9 +76,9 @@ private:
   CVD::Image<CVD::byte > img_bw_;
   CVD::Image<CVD::Rgb<CVD::byte> > img_rgb_;
 
-  Map *mpMap; 
-  MapMaker *mpMapMaker; 
-  Tracker *mpTracker; 
+  Map *mpMap;
+  MapMaker *mpMapMaker;
+  Tracker *mpTracker;
   ATANCamera *mpCamera;
 
 //  bool mbDone;
@@ -94,15 +91,11 @@ private:
   bool keyframesservice(ptam_com::KeyFrame_srvRequest & req, ptam_com::KeyFrame_srvResponse & resp);
 
   void imageCallback(const sensor_msgs::ImageConstPtr & img);
-  void imuCallback(const sensor_msgs::ImuConstPtr & msg);
   void keyboardCallback(const std_msgs::StringConstPtr & kb_input);
 
   bool transformQuaternion(const std::string & target_frame, const std_msgs::Header & header, const geometry_msgs::Quaternion & q_in, TooN::SO3<double> & r_out);
   bool transformPoint(const std::string & target_frame, const std_msgs::Header & header, const geometry_msgs::Point & t_in, TooN::Vector<3> & t_out);
   void quaternionToRotationMatrix(const geometry_msgs::Quaternion & q, TooN::SO3<double> & R);
-
-  /// finds object in queue with timestamp closest to timestamp. Requires that T has a std_msgs::header field named "header"
-  template<class T> bool findClosest(const ros::Time & timestamp, std::queue<T> & queue, T * obj, const double & max_delay = 0.01);
 
   static void GUICommandCallBack(void* ptr, std::string sCommand, std::string sParams);
 

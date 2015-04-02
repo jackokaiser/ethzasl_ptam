@@ -46,6 +46,7 @@ set(PTAM_SOURCE_FILES
   src/MapPoint.cc
   src/Relocaliser.cc
   src/System.cc
+  src/ImuHandler.cc
   src/Params.cpp
   src/OctomapInterface.cc
 )
@@ -76,6 +77,7 @@ set(PTAM_HEADER_FILES
   include/ptam/MapPoint.h
   include/ptam/PatchFinder.h
   include/ptam/System.h
+  include/ptam/ImuHandler.h
   include/ptam/Params.h
 )
 
