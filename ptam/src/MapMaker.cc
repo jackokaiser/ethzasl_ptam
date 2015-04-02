@@ -269,6 +269,16 @@ vector<list< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRe
   return ret;
 }
 
+float formatTimestamps (const vector<ros::Time>& timestamps, vector<float>& ret) {
+  float t0 = timestamps[0].toSec();
+  for (vector<ros::Time>::const_iterator it = timestamps.begin(); it != timestamps.end(); it++)
+  {
+    // normalize all time by t0
+    ret.push_back((*it).toSec() - t0);
+  }
+  return t0;
+}
+
 bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   KeyFrame::Ptr kS,
                                   const list<vector<CVD::ImageRef> >& features,
@@ -280,13 +290,15 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   int nObs = features.front().size();
   // int nFeatures = features.size();
   int nFeatures = 3;
-  // JACK: remove first bearing timespamps to all other timestamps
 
   cout << "Initialization with Closed-Form" <<endl<< "#features: "<< nFeatures <<" #observations: "<< nObs << endl;
   mCamera.SetImageSize(kF->aLevels[0].im.size());
 
   vector< list< Vector<3> > > opticalRays = UnProjectFeatures(features);
   // JACK: you may want to drop some camera images to increase speed
+
+  vector<float> tObs;
+  float initialTime = formatTimestamps(bearingTimestamps, tObs);
 
   int nEquations = 3*(nObs - 1)*nFeatures;
   int nUnknowns = nFeatures * nObs + 6;
@@ -297,9 +309,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
   Matrix<3> Tj = Identity;
-  float tj;
 
-  // for all first measurements
+  // build mu1 matrix with all first measurements
   list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
   for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
   {
@@ -309,15 +320,14 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   // for all observations after the initial one
   for (int iObs=1; iObs<nObs; iObs++)
   {
-    tj = bearingTimestamps[iObs].toSec();
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
 
     /////// Tj submatrix
-    Tj = Identity * -.5 * tj * tj;
+    Tj = Identity * -.5 * tObs[iObs] * tObs[iObs];
     for (int iFeature = 0; iFeature < nFeatures; iFeature++)
     {
-      A.slice(rowIdx, 0, 3, 3) = Tj;
+      A.slice(rowIdx + iFeature*3, 0, 3, 3) = Tj;
     }
 
 
