@@ -306,9 +306,9 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   for (int iObs=1; iObs<nObs; iObs++)
   {
     int rowIdx = 3 * nFeatures * (iObs - 1);
-    int colIdx = 2 + nFeatures * iObs;
+    int colIdx = 6 + nFeatures * iObs;
     cout << rowIdx << ","<<colIdx<< endl;
-    A.slice(rowIdx, 2, nFeatures*3, nFeatures) = mu1;
+    A.slice(rowIdx, 6, nFeatures*3, nFeatures) = mu1;
     // Matrix<> muj = A.slice(rowIdx, colIdx, nFeatures*3, nFeatures);
 
     list<Vector<3> >::iterator bearIt = opticalRays[iObs].begin();
