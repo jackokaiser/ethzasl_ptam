@@ -290,14 +290,16 @@ void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs) {
   imuMsgs.pop();
 }
 
-void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro)
+void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro, Vector<3>& CAv, Vector<3>& tCAv)
 {
 
   Vector<3> angVel;
+  Vector<3> acc;
   Matrix<3> iM;
   sensor_msgs::Imu imu;
-
-  while (!imuMsgs.empty() && (imuMsgs.front().header.stamp.toSec() - initialTime) < tObs)
+  Vector<3> CAdt;
+  double curTime;
+  while (!imuMsgs.empty() && (curTime = imuMsgs.front().header.stamp.toSec() - initialTime) < tObs)
   {
     angVel = makeVector(lastImu.angular_velocity.x, lastImu.angular_velocity.y, lastImu.angular_velocity.z);
     iM = Data(0,         angVel[2],     -angVel[1],
@@ -307,6 +309,11 @@ void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
     imu = imuMsgs.front();
     double dt = imu.header.stamp.toSec() - lastImu.header.stamp.toSec();
     rotationGyro = rotationGyro * (Identity + iM * dt);
+
+    acc = makeVector(lastImu.linear_acceleration.x, lastImu.linear_acceleration.y, lastImu.linear_acceleration.z);
+    CAdt = rotationGyro * dt * acc;
+    CAv = CAv + CAdt;
+    tCAv = tCAv + curTime * CAdt;
 
     imuMsgs.pop();
     lastImu = imu;
@@ -340,12 +347,15 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   cout << "Size of linear system: "<<endl<<nEquations<<"x"<<nUnknowns<<endl;
 
   Matrix<> A = Zeros(nEquations, nUnknowns);
-  Vector<> b = Zeros(nUnknowns);
+  Vector<> b = Zeros(nEquations);
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
   Matrix<3> Tj = Identity;
   Matrix<3> Sj = Identity;
   Matrix<3> rotationGyro = Identity;
+  Vector<3> CAv = Zeros;
+  Vector<3> tCAv = Zeros;
+  Vector<3> bv;
   double tj;
 
   // build mu1 matrix with all first measurements
@@ -359,7 +369,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   for (int iObs=1; iObs<nObs; iObs++)
   {
     tj = tObs[iObs];
-    integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro);
+    integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro, CAv, tCAv);
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
 
@@ -368,10 +378,14 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     /////// Sj submatrix
     Sj = Identity * -tj;
 
+    /////// Sv (b vector)
+    bv = tj * CAv - tCAv;
+
     for (int iFeature = 0; iFeature < nFeatures; iFeature++)
     {
       A.slice(rowIdx + iFeature*3, 0, 3, 3) = Tj;
       A.slice(rowIdx + iFeature*3, 3, 3, 3) = Sj;
+      b.slice(rowIdx + iFeature*3, 3) = bv;
     }
 
 
@@ -389,6 +403,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   }
 
   cout << A << endl;
+  cout << b << endl;
 
   return false;
 }
