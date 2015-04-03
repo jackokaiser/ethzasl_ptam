@@ -270,8 +270,8 @@ vector<list< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRe
   return ret;
 }
 
-float MapMaker::formatTimestamps (const vector<ros::Time>& timestamps, vector<float>& ret) {
-  float t0 = timestamps[0].toSec();
+double MapMaker::formatTimestamps (const vector<ros::Time>& timestamps, vector<double>& ret) {
+  double t0 = timestamps[0].toSec();
   for (vector<ros::Time>::const_iterator it = timestamps.begin(); it != timestamps.end(); it++)
   {
     // normalize all time by t0
@@ -290,7 +290,7 @@ void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs) {
   imuMsgs.pop();
 }
 
-void MapMaker::integrateImuUpToTime(float initialTime, float tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro)
+void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro)
 {
 
   Vector<3> angVel;
@@ -305,7 +305,7 @@ void MapMaker::integrateImuUpToTime(float initialTime, float tObs, queue<sensor_
               angVel[1], -angVel[0],        0    );
 
     imu = imuMsgs.front();
-    float dt = imu.header.stamp.toSec() - lastImu.header.stamp.toSec();
+    double dt = imu.header.stamp.toSec() - lastImu.header.stamp.toSec();
     rotationGyro = rotationGyro * (Identity + iM * dt);
 
     imuMsgs.pop();
@@ -332,8 +332,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   vector< list< Vector<3> > > opticalRays = UnProjectFeatures(features);
   // JACK: you may want to drop some camera images to increase speed
 
-  vector<float> tObs;
-  float initialTime = formatTimestamps(bearingTimestamps, tObs);
+  vector<double> tObs;
+  double initialTime = formatTimestamps(bearingTimestamps, tObs);
 
   int nEquations = 3*(nObs - 1)*nFeatures;
   int nUnknowns = nFeatures * nObs + 6;
@@ -344,7 +344,9 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
   Matrix<3> Tj = Identity;
+  Matrix<3> Sj = Identity;
   Matrix<3> rotationGyro = Identity;
+  double tj;
 
   // build mu1 matrix with all first measurements
   list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
@@ -356,15 +358,20 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   // for all observations after the initial one
   for (int iObs=1; iObs<nObs; iObs++)
   {
-    integrateImuUpToTime(initialTime, tObs[iObs], imuMsgs, rotationGyro);
+    tj = tObs[iObs];
+    integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro);
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
 
     /////// Tj submatrix
-    Tj = Identity * -.5 * tObs[iObs] * tObs[iObs];
+    Tj = Identity * -.5 * tj * tj;
+    /////// Sj submatrix
+    Sj = Identity * -tj;
+
     for (int iFeature = 0; iFeature < nFeatures; iFeature++)
     {
       A.slice(rowIdx + iFeature*3, 0, 3, 3) = Tj;
+      A.slice(rowIdx + iFeature*3, 3, 3, 3) = Sj;
     }
 
 
@@ -376,8 +383,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     // for all features at this observation
     for (int iFeature = 0; iFeature < nFeatures; iFeature++, bearIt++)
     {
-      // JACK: need to rotate them
-      A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = (*bearIt).as_col();
+      // JACK: possible speedup, put all features in a matrix [f1 f2 ... fn] and rotate them all at once
+      A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = rotationGyro * (*bearIt).as_col();
     }
   }
 

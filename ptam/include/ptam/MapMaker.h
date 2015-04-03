@@ -54,8 +54,8 @@ public:
 
   std::vector<std::list< TooN::Vector<3> > > UnProjectFeatures(const std::list<std::vector<CVD::ImageRef> >& features);
   void initializeImuIntegration(std::queue<sensor_msgs::Imu>& imuMsgs);
-  void integrateImuUpToTime(float initialTime, float tObs, std::queue<sensor_msgs::Imu>& imuMsgs, TooN::Matrix<3>& rotationGyro);
-  float formatTimestamps (const std::vector<ros::Time>& timestamps, std::vector<float>& ret);
+  void integrateImuUpToTime(double initialTime, double tObs, std::queue<sensor_msgs::Imu>& imuMsgs, TooN::Matrix<3>& rotationGyro);
+  double formatTimestamps (const std::vector<ros::Time>& timestamps, std::vector<double>& ret);
 
   bool InitFromClosedForm(KeyFrame::Ptr kF,
                           KeyFrame::Ptr kS,
