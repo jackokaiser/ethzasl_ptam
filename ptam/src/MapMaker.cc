@@ -414,6 +414,39 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   X = svdM.backsub(b);
   cout << X << endl;
 
+  // metric scale between the first and second keyframe
+  Vector<3> speed = X.slice(0,3);
+  Vector<3> translation = speed * tObs.back();
+  mdWiggleScale = norm(translation);
+
+  // JACK: how to use gravity information
+
+  se3TrackerPose = SE3<>(rotationGyro.T(), translation);
+  KeyFrame::Ptr pkFirst = kF;
+  KeyFrame::Ptr pkSecond = kS;
+
+  pkFirst->bFixed = true;
+  pkFirst->se3CfromW = SE3<>();
+
+  pkSecond->bFixed = false;
+  pkSecond->se3CfromW = se3TrackerPose;
+
+  // Construct map from the first keyframe bearings
+  featureIt = opticalRays[0].begin();
+  for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
+  {
+    MapPoint::Ptr p(new MapPoint());
+    Vector<3> bearing = *(featureIt);
+    // Patch source stuff:
+    p->v3WorldPos = bearing * X[6 + iFeature];
+    p->pPatchSourceKF = pkFirst;
+    p->nSourceLevel = 0;
+
+    p->pMMData = new MapMakerData();
+    mMap.vpPoints.push_back(p);
+
+    // JACK: Construct first two measurements and insert into relevant DBs:
+  }
 
   return false;
 }
