@@ -14,6 +14,7 @@
 #include <TooN/SVD.h>
 #include <TooN/SymEigen.h>
 #include <TooN/TooN.h>
+#include <TooN/SVD.h>
 
 #include <gvars3/instances.h>
 #include <fstream>
@@ -292,7 +293,7 @@ void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs) {
 
 void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro, Vector<3>& CAv, Vector<3>& tCAv)
 {
-
+  // JACK: transform imu into camera frame
   Vector<3> angVel;
   Vector<3> acc;
   Matrix<3> iM;
@@ -348,6 +349,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   Matrix<> A = Zeros(nEquations, nUnknowns);
   Vector<> b = Zeros(nEquations);
+  Vector<> X = Zeros(nUnknowns);
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
   Matrix<3> Tj = Identity;
@@ -404,6 +406,14 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   cout << A << endl;
   cout << b << endl;
+
+  SVD<-1> svdM(A);
+  // for square matrices
+  // X = gaussian_elimination(A, b);
+
+  X = svdM.backsub(b);
+  cout << X << endl;
+
 
   return false;
 }
