@@ -331,8 +331,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   initializeImuIntegration(imuMsgs);
 
   int nObs = features.front().size();
-  // int nFeatures = features.size();
-  int nFeatures = 3;
+  int nFeatures = features.size();
+  // int nFeatures = 3;
 
   cout << "Initialization with Closed-Form" <<endl<< "#features: "<< nFeatures <<" #observations: "<< nObs << endl;
   mCamera.SetImageSize(kF->aLevels[0].im.size());
@@ -404,15 +404,12 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     }
   }
 
-  cout << A << endl;
-  cout << b << endl;
-
   SVD<-1> svdM(A);
   // for square matrices
   // X = gaussian_elimination(A, b);
 
   X = svdM.backsub(b);
-  cout << "computed solution :" << endl << X.as_col() << endl;
+  // cout << "computed solution :" << endl << X.as_col() << endl;
 
   // JACK: how to use speed information
   // Vector<3> speed = X.slice(0,3);
@@ -448,10 +445,11 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   mdWiggleScale = norm(meanTranslation);
 
-  cout << "mean translation between first and last keyframe: "<< endl << meanTranslation << endl;
+  // cout << "mean translation between first and last keyframe: "<< endl << meanTranslation << endl;
 
   // Construct map from the first keyframe bearings
-  for (int iFeature = 0; iFeature < nFeatures; iFeature++)
+  list<vector<CVD::ImageRef> >::const_iterator imageRef = features.begin();
+  for (int iFeature = 0; iFeature < nFeatures; iFeature++, imageRef++)
   {
     MapPoint::Ptr p(new MapPoint());
     // Patch source stuff:
@@ -461,12 +459,113 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
     p->pMMData = new MapMakerData();
     mMap.vpPoints.push_back(p);
-
     // JACK: Construct first two measurements and insert into relevant DBs:
+    Measurement mFirst;
+    mFirst.nLevel = 0;
+    mFirst.Source = Measurement::SRC_ROOT;
+    mFirst.v2RootPos = vec((*imageRef).front());
+    mFirst.bSubPix = true;
+    pkFirst->mMeasurements[p] = mFirst;
+    p->pMMData->sMeasurementKFs.insert(pkFirst);
+
+    Measurement mSecond;
+    mSecond.nLevel = 0;
+    mSecond.Source = Measurement::SRC_TRAIL;
+    mSecond.v2RootPos = vec((*imageRef).back());
+    mSecond.bSubPix = true;
+    pkSecond->mMeasurements[p] = mSecond;
+    p->pMMData->sMeasurementKFs.insert(pkSecond);
+
+#ifdef KF_REPROJ
+    pkFirst->AddKeyMapPoint(p);
+    pkSecond->AddKeyMapPoint(p);
+#endif
+
   }
 
+    //Weiss{
+  if(mMap.vpPoints.size()<4)
+  {
+    ROS_WARN_STREAM("Too few map points to init.");
+    return false;
+  }
+  //}
 
-  return false;
+  mMap.vpKeyFrames.push_back(pkFirst);
+  mMap.vpKeyFrames.push_back(pkSecond);
+  pkFirst->MakeKeyFrame_Rest();
+  pkSecond->MakeKeyFrame_Rest();
+  //Weiss{
+  //	for(int i=0; i<5; i++)
+  /*}*/	BundleAdjustAll();
+
+  // Estimate the feature depth distribution in the first two key-frames
+  // (Needed for epipolar search)
+
+  //Weiss{
+  if(!RefreshSceneDepth(pkFirst))
+  {
+    ROS_WARN_STREAM("Something is seriously wrong with the first KF.");
+    return false;
+  }
+  if(!RefreshSceneDepth(pkSecond))
+  {
+    ROS_WARN_STREAM("Something is seriously wrong with the second KF.");
+    return false;
+  }
+  mdWiggleScaleDepthNormalized = mdWiggleScale / pkFirst->dSceneDepthMean;
+
+
+  //check if point have been added
+  const VarParams& pParams = PtamParameters::varparams();
+  bool addedsome=false;
+  addedsome |= AddSomeMapPoints(3);
+  if(!pParams.NoLevelZeroMapPoints)
+    addedsome |= AddSomeMapPoints(0);
+  addedsome |= AddSomeMapPoints(1);
+  addedsome |= AddSomeMapPoints(2);
+  if(!addedsome)
+  {
+    ROS_WARN_STREAM("Could not add any map points on any level - abort init.");
+    return false;
+  }
+  //}
+
+  mbBundleConverged_Full = false;
+  mbBundleConverged_Recent = false;
+  //Weiss{
+  double nloops=0;
+  while(!mbBundleConverged_Full & (nloops<pParams.MaxStereoInitLoops))
+  {
+    BundleAdjustAll();
+    if(mbResetRequested | (nloops>=pParams.MaxStereoInitLoops))
+      return false;
+    nloops++;
+  }
+
+  //sanity check: if the point variance is too large assume init is crap --> very hacky, assumes flat init scene!!
+  if(((pkFirst->dSceneDepthSigma+pkSecond->dSceneDepthSigma)/2.0>0.5) && pParams.CheckInitMapVar)
+  {
+    ROS_WARN_STREAM("Initial map rejected because of too large point variance. Point sigma: " << ((pkFirst->dSceneDepthSigma+pkSecond->dSceneDepthSigma)/2.0));
+    return false;
+  }
+
+  //}
+
+  // Rotate and translate the map so the dominant plane is at z=0:
+  ApplyGlobalTransformationToMap(CalcPlaneAligner());
+  mMap.bGood = true;
+
+  mMessageForUser << "  MapMaker: made initial map with " << mMap.vpPoints.size() << " points." << endl;
+
+  //slynen octomap_interface{
+  octomap_interface.addKeyFrame(pkFirst);
+  octomap_interface.addKeyFrame(pkSecond);
+  //}
+
+
+
+  return true;
 }
 
 // InitFromStereo() generates the initial match from two keyframes

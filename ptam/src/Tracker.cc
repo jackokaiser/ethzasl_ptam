@@ -221,7 +221,6 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
       if(mnInitialStage == TRAIL_TRACKING_NOT_STARTED)
       {
         mbUserPressedSpacebar=true;
-        cout << "initialized timestamp: " << initialTimestamp << endl;
       }
       else if(mnInitialStage == TRAIL_TRACKING_STARTED)
       {
@@ -229,7 +228,8 @@ void Tracker::TrackFrame(Image<CVD::byte> &imFrame, bool bDraw, const ros::Time 
         {
           ros::Duration elapsedTime = timestamp - initialTimestamp;
           // JACK: also check number of camera imgs to be greater than something
-          if (elapsedTime.toSec() > pPars.ClosedFormDuration || bearingTimestamps.size() > 3)
+          // unsigned int nObs = bearingTimestamps.size();
+          if (elapsedTime.toSec() > pPars.ClosedFormDuration)
           {
             mbUserPressedSpacebar=true;
           }
