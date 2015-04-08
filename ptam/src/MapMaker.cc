@@ -412,16 +412,31 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   // X = gaussian_elimination(A, b);
 
   X = svdM.backsub(b);
-  cout << X << endl;
+  cout << "computed solution :" << endl << X.as_col() << endl;
 
-  // metric scale between the first and second keyframe
-  Vector<3> speed = X.slice(0,3);
-  Vector<3> translation = speed * tObs.back();
-  mdWiggleScale = norm(translation);
-
+  // JACK: how to use speed information
+  // Vector<3> speed = X.slice(0,3);
   // JACK: how to use gravity information
+  // Vector<3> gravity = X.slice(3,3);
 
-  se3TrackerPose = SE3<>(rotationGyro.T(), translation);
+  // compute translation between first and last keyframes
+  Vector<3> meanTranslation = Zeros;
+  vector< Vector<3> > featurePos;
+  featureIt = opticalRays[0].begin();
+  list<Vector<3> >::const_iterator featureItLastObs = opticalRays[nObs-1].begin();
+  for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++, featureItLastObs++)
+  {
+    Vector<3> firstBearing = *(featureIt);
+    Vector<3> lastBearing = *(featureItLastObs);
+    Vector<3> iFeaturePos = firstBearing * X[6 + iFeature];
+    featurePos.push_back(iFeaturePos);
+    Vector<3> rotatedFt = rotationGyro * iFeaturePos;
+    Vector<3> lastObsFt = X[nUnknowns - nFeatures - 1 + iFeature] * lastBearing;
+    meanTranslation += lastObsFt - rotatedFt;
+  }
+  meanTranslation *= 1./(double)nFeatures;
+
+  se3TrackerPose = SE3<>(rotationGyro.T(), meanTranslation);
   KeyFrame::Ptr pkFirst = kF;
   KeyFrame::Ptr pkSecond = kS;
 
@@ -431,14 +446,16 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   pkSecond->bFixed = false;
   pkSecond->se3CfromW = se3TrackerPose;
 
+  mdWiggleScale = norm(meanTranslation);
+
+  cout << "mean translation between first and last keyframe: "<< endl << meanTranslation << endl;
+
   // Construct map from the first keyframe bearings
-  featureIt = opticalRays[0].begin();
-  for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
+  for (int iFeature = 0; iFeature < nFeatures; iFeature++)
   {
     MapPoint::Ptr p(new MapPoint());
-    Vector<3> bearing = *(featureIt);
     // Patch source stuff:
-    p->v3WorldPos = bearing * X[6 + iFeature];
+    p->v3WorldPos = featurePos[iFeature];
     p->pPatchSourceKF = pkFirst;
     p->nSourceLevel = 0;
 
@@ -447,6 +464,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
     // JACK: Construct first two measurements and insert into relevant DBs:
   }
+
 
   return false;
 }
