@@ -7,11 +7,11 @@
 
 using namespace std;
 
-void ImuHandler::imuCallback(const sensor_msgs::ImuConstPtr & msg)
+void ImuHandler::imuCallback(sensor_msgs::ImuConstPtr msg)
 {
   if (isCollectingImuMsg)
   {
-    imuMsgs.push(*msg);
+    imuMsgs.push(transformToCameraFrame(msg));
     if (isQueueLimited && imuMsgs.size() > limitImuQueue)
     {
       imuMsgs.pop();
@@ -22,6 +22,26 @@ void ImuHandler::imuCallback(const sensor_msgs::ImuConstPtr & msg)
 ImuHandler::ImuQueue ImuHandler::getMsgs()
 {
   return imuMsgs;
+}
+
+sensor_msgs::Imu ImuHandler::transformToCameraFrame(sensor_msgs::ImuConstPtr imu)
+{
+  // JACK: HACK ALERT ! The transformation imu/cam should be coming from a topic
+  sensor_msgs::Imu ret = *imu;
+
+  TooN::Vector<3> ang_velocity = imuToCam * TooN::makeVector(ret.angular_velocity.x, ret.angular_velocity.y, ret.angular_velocity.z);
+  ret.angular_velocity.x =  ang_velocity[0];
+  ret.angular_velocity.y =  ang_velocity[1];
+  ret.angular_velocity.z =  ang_velocity[2];
+
+  // JACK HACK ALERT 2
+  // more complicated than that for linear acceleration, see rigid body physics
+  TooN::Vector<3> linear_acc = imuToCam * TooN::makeVector(ret.linear_acceleration.x, ret.linear_acceleration.y, ret.linear_acceleration.z);
+  ret.linear_acceleration.x =  linear_acc[0];
+  ret.linear_acceleration.y =  linear_acc[1];
+  ret.linear_acceleration.z =  linear_acc[2];
+
+  return ret;
 }
 
 void ImuHandler::flushMsgs()

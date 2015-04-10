@@ -36,8 +36,8 @@ public:
   void unsetLimitImuQueue ();
   void setCollectImuMsg(bool b);
   void flushMsgs ();
-  void imuCallback(const sensor_msgs::ImuConstPtr & msg);
-
+  void imuCallback(sensor_msgs::ImuConstPtr msg);
+  sensor_msgs::Imu transformToCameraFrame(sensor_msgs::ImuConstPtr imu);
   void getImuTransform (TooN::SO3<double>& lastOrientation, TooN::SO3<double>& newOrientation);
   ImuQueue getMsgs ();
   void computeImuTransform(const tf::TransformListener& tf_sub, const ros::Time& timestamp, const std::string& frame_id);
@@ -49,7 +49,12 @@ public:
   void quaternionToRotationMatrix(const geometry_msgs::Quaternion & q, TooN::SO3<double> & R);
 
 private:
-  ImuHandler() {};                   // Constructor? (the {} brackets) are needed here.
+  ImuHandler() {
+    // Initialized for downward looking cameras
+    TooN::Fill(imuToCam) =  0,-1,0,
+        -1,0,0,
+        0,0,-1;
+  };
 
   /* prevent copy */
   ImuHandler(ImuHandler const&);              // Don't Implement
@@ -58,6 +63,8 @@ private:
   TooN::SO3<double> currentImuTransform;
   TooN::SO3<double> lastImuTransform;
   ImuQueue imuMsgs;
+  TooN::Matrix<3> imuToCam;
+
   unsigned int limitImuQueue;
   bool isQueueLimited;
   bool isCollectingImuMsg;

@@ -404,17 +404,21 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     }
   }
 
+  ros::Time beginInvertingTime = ros::Time::now();
   SVD<-1> svdM(A);
   // for square matrices
   // X = gaussian_elimination(A, b);
-
   X = svdM.backsub(b);
+  double timeToInvert = ros::Time::now().toSec() - beginInvertingTime.toSec();
+  cout << "it took "<<timeToInvert << "seconds to invert the system" << endl;
   // cout << "computed solution :" << endl << X.as_col() << endl;
 
   // JACK: how to use speed information
-  // Vector<3> speed = X.slice(0,3);
+  Vector<3> speed = X.slice(0,3);
   // JACK: how to use gravity information
-  // Vector<3> gravity = X.slice(3,3);
+  Vector<3> gravity = X.slice(3,3);
+  cout << "Speed: " << speed << endl;
+  cout << "Gravity: " << gravity << endl;
 
   // compute translation between first and last keyframes
   Vector<3> meanTranslation = Zeros;
@@ -426,6 +430,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     Vector<3> firstBearing = *(featureIt);
     Vector<3> lastBearing = *(featureItLastObs);
     Vector<3> iFeaturePos = firstBearing * X[6 + iFeature];
+    cout << "lambda"<<iFeature << ": " << X[6 + iFeature] << endl;
     featurePos.push_back(iFeaturePos);
     Vector<3> rotatedFt = rotationGyro * iFeaturePos;
     Vector<3> lastObsFt = X[nUnknowns - nFeatures - 1 + iFeature] * lastBearing;
@@ -445,7 +450,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 
   mdWiggleScale = norm(meanTranslation);
 
-  // cout << "mean translation between first and last keyframe: "<< endl << meanTranslation << endl;
+  cout << "mean translation between first and last keyframe: "<< endl << meanTranslation << endl;
 
   // Construct map from the first keyframe bearings
   list<vector<CVD::ImageRef> >::const_iterator imageRef = features.begin();
