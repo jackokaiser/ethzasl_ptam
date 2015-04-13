@@ -299,16 +299,17 @@ void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
   Matrix<3> iM;
   sensor_msgs::Imu imu;
   Vector<3> CAdt;
-  double curTime;
-  while (!imuMsgs.empty() && (curTime = imuMsgs.front().header.stamp.toSec() - initialTime) < tObs)
+  double curTime = lastImu.header.stamp.toSec() - initialTime;
+  double nextTime;
+  while (!imuMsgs.empty() && (nextTime = imuMsgs.front().header.stamp.toSec() - initialTime) < tObs)
   {
     angVel = makeVector(lastImu.angular_velocity.x, lastImu.angular_velocity.y, lastImu.angular_velocity.z);
-    iM = Data(0,         angVel[2],     -angVel[1],
-              -angVel[2],   0,          angVel[0],
-              angVel[1], -angVel[0],        0    );
+    iM = Data(0,         -angVel[2],     angVel[1],
+              angVel[2],   0,          -angVel[0],
+              -angVel[1], angVel[0],        0    );
 
     imu = imuMsgs.front();
-    double dt = imu.header.stamp.toSec() - lastImu.header.stamp.toSec();
+    double dt = nextTime - curTime;
     rotationGyro = rotationGyro * (Identity + iM * dt);
 
     acc = makeVector(lastImu.linear_acceleration.x, lastImu.linear_acceleration.y, lastImu.linear_acceleration.z);
@@ -318,6 +319,7 @@ void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
 
     imuMsgs.pop();
     lastImu = imu;
+    curTime = nextTime;
   }
 }
 
