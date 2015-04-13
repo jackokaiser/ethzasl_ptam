@@ -351,7 +351,9 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
 {
   queue<sensor_msgs::Imu> imuMsgs = ImuHandler::getInstance().getMsgs();
 
-  int nObs = features.front().size();
+  // CARE: NOT TAKING LAST OBS INTO ACCOUNT AS THE CORRESPONSING IMU NOT ALWAYS THERE
+  int lastObsToIgnore = 2;
+  int nObs = features.front().size() - lastObsToIgnore;
   // int nFeatures = features.size();
   int nFeatures = 2;
 
@@ -369,7 +371,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   ofstream myfileImu;
   myfileImu.open ("imuData.csv");
   ofstream myfileCameraObs;
-  myfileCameraObs.open("cameraStamps.csv");
+  myfileCameraObs.open("cameraMeasurements");
 
   initializeImuIntegration(imuMsgs, initialTime);
   cout << initialTime << endl;
@@ -391,17 +393,16 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   double tj;
 
 
-  myfileCameraObs << -1 << "," << initialTime << endl;
-  for (int iObs=0; iObs<nObs; iObs++) {
-    myfileCameraObs << iObs << "," << tObs[iObs] << endl;
-  }
-
+  myfileCameraObs << nFeatures << " " << initialTime << endl;
+  myfileCameraObs << tObs[0] << " ";
   // build mu1 matrix with all first measurements
   list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
   for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
   {
-    mu1.slice(iFeature*3, iFeature, 3, 1) = (*featureIt).as_col();
+      myfileCameraObs << (*featureIt)[0] << " " << (*featureIt)[1] << " " << (*featureIt)[2] << " ";
+      mu1.slice(iFeature*3, iFeature, 3, 1) = (*featureIt).as_col();
   }
+  myfileCameraObs << endl;
 
   // for all observations after the initial one
   for (int iObs=1; iObs<nObs; iObs++)
@@ -420,13 +421,16 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     /////// Sv (b vector)
     bv = tj * CAv - tCAv;
 
+    myfileCameraObs << tObs[iObs] << " ";
     for (int iFeature = 0; iFeature < nFeatures; iFeature++)
     {
+      myfileCameraObs << (*featureIt)[0] << " " << (*featureIt)[1] << " " << (*featureIt)[2] << " ";
+
       A.slice(rowIdx + iFeature*3, 0, 3, 3) = Tj;
       A.slice(rowIdx + iFeature*3, 3, 3, 3) = Sj;
       b.slice(rowIdx + iFeature*3, 3) = bv;
     }
-
+    myfileCameraObs << endl;
 
     // first feature observation (mu1)
     A.slice(rowIdx, 6, nFeatures*3, nFeatures) = mu1;
@@ -440,15 +444,29 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
       A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = rotationGyro * (*bearIt).as_col();
     }
   }
+  // give the last imu record
+  do {
+    // discard all message anterior to first observation
+    myfileImu << lastImu.header.stamp.toSec() - initialTime << "," <<
+        lastImu.angular_velocity.x << "," << lastImu.angular_velocity.y << "," << lastImu.angular_velocity.z << "," <<
+        lastImu.linear_acceleration.x << "," << lastImu.linear_acceleration.y << "," << lastImu.linear_acceleration.z << endl;
+
+    lastImu = imuMsgs.front();
+    imuMsgs.pop();
+  } while (!imuMsgs.empty());
+
+
   myfileImuIntegration.close();
   myfileCameraObs.close();
   myfileImu.close();
-  exit(1);
+
   ros::Time beginInvertingTime = ros::Time::now();
   SVD<-1> svdM(A);
   // for square matrices
   // X = gaussian_elimination(A, b);
   X = svdM.backsub(b);
+  cout << X << endl;
+  exit(1);
   double timeToInvert = ros::Time::now().toSec() - beginInvertingTime.toSec();
   cout << "it took "<<timeToInvert << "seconds to invert the system" << endl;
   // cout << "computed solution :" << endl << X.as_col() << endl;
