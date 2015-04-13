@@ -27,6 +27,8 @@
 #include <sstream>
 #include <boost/shared_ptr.hpp>
 #include <ptam/OctomapInterface.h>
+#include <iostream>
+#include <fstream>
 
 
 // Each MapPoint has an associated MapMakerData class
@@ -53,9 +55,9 @@ public:
                       SE3<> &se3CameraPos);
 
   std::vector<std::list< TooN::Vector<3> > > UnProjectFeatures(const std::list<std::vector<CVD::ImageRef> >& features);
-  void initializeImuIntegration(std::queue<sensor_msgs::Imu>& imuMsgs);
+  void initializeImuIntegration(std::queue<sensor_msgs::Imu>& imuMsgs, double initialTime);
   void integrateImuUpToTime(double initialTime, double tObs, std::queue<sensor_msgs::Imu>& imuMsgs, TooN::Matrix<3>& rotationGyro,
-                            Vector<3>& CAv, Vector<3>& tCAv);
+                            Vector<3>& CAv, Vector<3>& tCAv, std::ofstream& myfileImu, std::ofstream& myfileImuIntegration);
   double formatTimestamps (const std::vector<ros::Time>& timestamps, std::vector<double>& ret);
 
   bool InitFromClosedForm(KeyFrame::Ptr kF,

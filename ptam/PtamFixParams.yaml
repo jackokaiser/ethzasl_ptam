@@ -31,7 +31,7 @@ FASTMethod: OAST16
 MaxStereoInitLoops: 4
 AutoInitPixel: 20
 AutoInit: True
-ClosedFormDuration: 3.0
+ClosedFormDuration: 1.0
 ClosedFormInit: True
 
 # --- bluefox - low distort lens  ---

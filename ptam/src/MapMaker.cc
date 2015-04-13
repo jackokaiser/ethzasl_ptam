@@ -10,6 +10,8 @@
 #include <cvd/vector_image_ref.h>
 #include <cvd/vision.h>
 #include <cvd/image_interpolate.h>
+#include <iostream>
+#include <fstream>
 
 #include <TooN/SVD.h>
 #include <TooN/SymEigen.h>
@@ -281,17 +283,22 @@ double MapMaker::formatTimestamps (const vector<ros::Time>& timestamps, vector<d
   return t0;
 }
 
-void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs) {
+void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs, double initialTime) {
   if (imuMsgs.empty())
   {
     cout << "Closed-Form: no imu messages to integrate" << endl;
     return;
   }
-  lastImu = imuMsgs.front();
-  imuMsgs.pop();
+  else {
+    do {
+      // discard all message anterior to first observation
+      lastImu = imuMsgs.front();
+      imuMsgs.pop();
+    } while ((lastImu.header.stamp.toSec() - initialTime) < 0.);
+  }
 }
 
-void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro, Vector<3>& CAv, Vector<3>& tCAv)
+void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro, Vector<3>& CAv, Vector<3>& tCAv, ofstream& myfileImu, ofstream& myfileImuIntegration)
 {
   // JACK: transform imu into camera frame
   Vector<3> angVel;
@@ -318,6 +325,19 @@ void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
     tCAv = tCAv + curTime * CAdt;
 
     imuMsgs.pop();
+
+    myfileImu << curTime << "," <<
+        lastImu.angular_velocity.x << "," << lastImu.angular_velocity.y << "," << lastImu.angular_velocity.z << "," <<
+        lastImu.linear_acceleration.x << "," << lastImu.linear_acceleration.y << "," << lastImu.linear_acceleration.z << endl;
+
+    myfileImuIntegration << curTime << "," <<
+        rotationGyro[0][0] << "," << rotationGyro[0][1] << "," << rotationGyro[0][2] << "," <<
+        rotationGyro[1][0] << "," << rotationGyro[1][1] << "," << rotationGyro[1][2] << "," <<
+        rotationGyro[2][0] << "," << rotationGyro[2][1] << "," << rotationGyro[2][2] << "," <<
+        CAv[0] << "," << CAv[1] << "," << CAv[2] <<
+        tCAv[0] << "," << tCAv[1] << "," << tCAv[2] << "," << dt <<endl;
+
+
     lastImu = imu;
     curTime = nextTime;
   }
@@ -330,11 +350,10 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   SE3<> &se3TrackerPose)
 {
   queue<sensor_msgs::Imu> imuMsgs = ImuHandler::getInstance().getMsgs();
-  initializeImuIntegration(imuMsgs);
 
   int nObs = features.front().size();
-  int nFeatures = features.size();
-  // int nFeatures = 3;
+  // int nFeatures = features.size();
+  int nFeatures = 2;
 
   cout << "Initialization with Closed-Form" <<endl<< "#features: "<< nFeatures <<" #observations: "<< nObs << endl;
   mCamera.SetImageSize(kF->aLevels[0].im.size());
@@ -345,6 +364,15 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   vector<double> tObs;
   double initialTime = formatTimestamps(bearingTimestamps, tObs);
 
+  ofstream myfileImuIntegration;
+  myfileImuIntegration.open ("imuIntegration.csv");
+  ofstream myfileImu;
+  myfileImu.open ("imuData.csv");
+  ofstream myfileCameraObs;
+  myfileCameraObs.open("cameraStamps.csv");
+
+  initializeImuIntegration(imuMsgs, initialTime);
+  cout << initialTime << endl;
   int nEquations = 3*(nObs - 1)*nFeatures;
   int nUnknowns = nFeatures * nObs + 6;
   cout << "Size of linear system: "<<endl<<nEquations<<"x"<<nUnknowns<<endl;
@@ -362,6 +390,12 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   Vector<3> bv;
   double tj;
 
+
+  myfileCameraObs << -1 << "," << initialTime << endl;
+  for (int iObs=0; iObs<nObs; iObs++) {
+    myfileCameraObs << iObs << "," << tObs[iObs] << endl;
+  }
+
   // build mu1 matrix with all first measurements
   list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
   for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
@@ -373,7 +407,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   for (int iObs=1; iObs<nObs; iObs++)
   {
     tj = tObs[iObs];
-    integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro, CAv, tCAv);
+
+    integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro, CAv, tCAv, myfileImu, myfileImuIntegration);
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
 
@@ -405,7 +440,10 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
       A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = rotationGyro * (*bearIt).as_col();
     }
   }
-
+  myfileImuIntegration.close();
+  myfileCameraObs.close();
+  myfileImu.close();
+  exit(1);
   ros::Time beginInvertingTime = ros::Time::now();
   SVD<-1> svdM(A);
   // for square matrices
