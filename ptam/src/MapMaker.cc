@@ -286,7 +286,7 @@ double MapMaker::formatTimestamps (const vector<ros::Time>& timestamps, vector<d
 void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs, double initialTime) {
   if (imuMsgs.empty())
   {
-    cout << "Closed-Form: no imu messages to integrate" << endl;
+    ROS_WARN_STREAM("Closed-Form: no imu messages to integrate");
     return;
   }
   else {
@@ -298,8 +298,12 @@ void MapMaker::initializeImuIntegration(queue<sensor_msgs::Imu>& imuMsgs, double
   }
 }
 
-void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro, Vector<3>& CAv, Vector<3>& tCAv, ofstream& myfileImu, ofstream& myfileImuIntegration)
+bool MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<sensor_msgs::Imu>& imuMsgs, Matrix<3>& rotationGyro, Vector<3>& CAv, Vector<3>& tCAv, ofstream& myfileImu, ofstream& myfileImuIntegration)
 {
+  if (imuMsgs.empty()) {
+    return false;
+  }
+
   // JACK: transform imu into camera frame
   Vector<3> angVel;
   Vector<3> acc;
@@ -308,6 +312,7 @@ void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
   Vector<3> CAdt;
   double curTime = lastImu.header.stamp.toSec() - initialTime;
   double nextTime;
+
   while (!imuMsgs.empty() && (nextTime = imuMsgs.front().header.stamp.toSec() - initialTime) < tObs)
   {
     angVel = makeVector(lastImu.angular_velocity.x, lastImu.angular_velocity.y, lastImu.angular_velocity.z);
@@ -341,6 +346,7 @@ void MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
     lastImu = imu;
     curTime = nextTime;
   }
+  return true;
 }
 
 bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
@@ -352,8 +358,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   queue<sensor_msgs::Imu> imuMsgs = ImuHandler::getInstance().getMsgs();
 
   // CARE: NOT TAKING LAST OBS INTO ACCOUNT AS THE CORRESPONSING IMU NOT ALWAYS THERE
-  int lastObsToIgnore = 2;
-  int nObs = features.front().size() - lastObsToIgnore;
+  int nObs = features.front().size();
   // int nFeatures = features.size();
   int nFeatures = 2;
 
@@ -379,9 +384,8 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   int nUnknowns = nFeatures * nObs + 6;
   cout << "Size of linear system: "<<endl<<nEquations<<"x"<<nUnknowns<<endl;
 
-  Matrix<> A = Zeros(nEquations, nUnknowns);
-  Vector<> b = Zeros(nEquations);
-  Vector<> X = Zeros(nUnknowns);
+  Matrix<> leftHandMatrix = Zeros(nEquations, nUnknowns);
+  Vector<> rightHandVector  = Zeros(nEquations);
 
   Matrix<> mu1 = Zeros(nFeatures*3, nFeatures);
   Matrix<3> Tj = Identity;
@@ -391,7 +395,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   Vector<3> tCAv = Zeros;
   Vector<3> bv;
   double tj;
-
+  bool enoughImuForThisObs;
 
   myfileCameraObs << nFeatures << " " << initialTime << endl;
   myfileCameraObs << tObs[0] << " ";
@@ -408,8 +412,15 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
   for (int iObs=1; iObs<nObs; iObs++)
   {
     tj = tObs[iObs];
+    enoughImuForThisObs = integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro, CAv, tCAv, myfileImu, myfileImuIntegration);
 
-    integrateImuUpToTime(initialTime, tj, imuMsgs, rotationGyro, CAv, tCAv, myfileImu, myfileImuIntegration);
+    if (!enoughImuForThisObs) {
+      ROS_WARN_STREAM("Discarding the lasts " << nObs - iObs << " observations: no related IMU data");
+      nObs = iObs;
+      nEquations = 3*(nObs - 1)*nFeatures;
+      nUnknowns = nFeatures * nObs + 6;
+      break;
+    }
     int rowIdx = 3 * nFeatures * (iObs - 1);
     int colIdx = 6 + nFeatures * iObs;
 
@@ -426,14 +437,14 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     {
       myfileCameraObs << (*featureIt)[0] << " " << (*featureIt)[1] << " " << (*featureIt)[2] << " ";
 
-      A.slice(rowIdx + iFeature*3, 0, 3, 3) = Tj;
-      A.slice(rowIdx + iFeature*3, 3, 3, 3) = Sj;
-      b.slice(rowIdx + iFeature*3, 3) = bv;
+      leftHandMatrix.slice(rowIdx + iFeature*3, 0, 3, 3) = Tj;
+      leftHandMatrix.slice(rowIdx + iFeature*3, 3, 3, 3) = Sj;
+      rightHandVector.slice(rowIdx + iFeature*3, 3) = bv;
     }
     myfileCameraObs << endl;
 
     // first feature observation (mu1)
-    A.slice(rowIdx, 6, nFeatures*3, nFeatures) = mu1;
+    leftHandMatrix.slice(rowIdx, 6, nFeatures*3, nFeatures) = mu1;
 
     // current feature observation (muj)
     list<Vector<3> >::iterator bearIt = opticalRays[iObs].begin();
@@ -441,7 +452,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     for (int iFeature = 0; iFeature < nFeatures; iFeature++, bearIt++)
     {
       // JACK: possible speedup, put all features in a matrix [f1 f2 ... fn] and rotate them all at once
-      A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = rotationGyro * (*bearIt).as_col();
+      leftHandMatrix.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = rotationGyro * (*bearIt).as_col();
     }
   }
   // give the last imu record
@@ -455,6 +466,12 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     imuMsgs.pop();
   } while (!imuMsgs.empty());
 
+  Matrix<> A(nEquations, nUnknowns);
+  Vector<> b(nEquations);
+  Vector<> X(nUnknowns);
+
+  A = leftHandMatrix.slice(0,0, nEquations, nUnknowns);
+  b = rightHandVector.slice(0, nEquations);
 
   myfileImuIntegration.close();
   myfileCameraObs.close();
