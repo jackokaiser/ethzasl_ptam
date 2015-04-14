@@ -402,7 +402,7 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
     for (int iFeature = 0; iFeature < nFeatures; iFeature++, bearIt++)
     {
       // JACK: possible speedup, put all features in a matrix [f1 f2 ... fn] and rotate them all at once
-      A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = rotationGyro * (*bearIt).as_col();
+      A.slice(rowIdx + iFeature*3, colIdx + iFeature, 3, 1) = -(rotationGyro * (*bearIt).as_col());
     }
   }
 
