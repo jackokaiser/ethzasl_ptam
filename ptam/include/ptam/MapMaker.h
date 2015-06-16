@@ -65,6 +65,11 @@ public:
                           const std::list< std::vector<CVD::ImageRef> >& features,
                           const std::vector<ros::Time>& bearingTimestamps,
                           SE3<> &se3TrackerPose);
+  bool extractCamObs(KeyFrame::Ptr kF,
+                          KeyFrame::Ptr kS,
+                          const std::list< std::vector<CVD::ImageRef> >& features,
+                          const std::vector<ros::Time>& bearingTimestamps,
+                          SE3<> &se3TrackerPose);
 
   bool InitFromStereo_OLD(KeyFrame::Ptr kFirst, KeyFrame::Ptr kSecond,  // EXPERIMENTAL HACK
                           std::vector<std::pair<CVD::ImageRef, CVD::ImageRef> > &vMatches,

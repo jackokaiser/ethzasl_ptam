@@ -1,7 +1,7 @@
 <launch>
     <node name="ptam" pkg="ptam" type="ptam" clear_params="true" output="screen">
-      <remap from="image" to="/image_converter/output_image" />
-      <remap from="vslam/imu" to="/fcu/imu" />
+      <remap from="image" to="/camera/image_raw" />
+      <remap from="vslam/imu" to="/tupac/imu" />
         <remap from="pose" to="pose"/>
       <rosparam file="$(find ptam)/PtamFixParams.yaml"/>
     </node>

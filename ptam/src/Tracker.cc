@@ -100,6 +100,8 @@ void Tracker::Reset()
   mnFrame=0;
   mv6CameraVelocity = Zeros;
   mbJustRecoveredSoUseCoarse = false;
+  ImuHandler::getInstance().flushMsgs();
+  ImuHandler::getInstance().unsetLimitImuQueue();
 }
 
 
@@ -504,8 +506,8 @@ void Tracker::TrackForInitialMap(const ros::Time& timestamp)
       if (PtamParameters::varparams().ClosedFormInit)
       {
         std::vector<ros::Time> imuTimestamps;
-        initret=mMapMaker.InitFromClosedForm(mFirstKF, mCurrentKF,
-                                             mlBearings, bearingTimestamps, mse3CamFromWorld);
+        initret=mMapMaker.extractCamObs(mFirstKF, mCurrentKF,
+                                        mlBearings, bearingTimestamps, mse3CamFromWorld);
       }
       else
       {

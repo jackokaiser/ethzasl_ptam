@@ -31,8 +31,20 @@ FASTMethod: OAST16
 MaxStereoInitLoops: 4
 AutoInitPixel: 20
 AutoInit: True
-ClosedFormDuration: 1.0
+ClosedFormDuration: 2
 ClosedFormInit: True
+
+Cam_model: ATAN
+Cam_width: 752
+Cam_height: 480
+Cam_fx: 0.511227
+Cam_fy: 0.801994
+Cam_cx: 0.523374
+Cam_cy: 0.50313
+Cam_s: 0.936762
+Cam_calib_date: '2014-12-08'
+Cam_name: BLUEFOX_25001297
+Cam_description: ''
 
 # --- bluefox - low distort lens  ---
 # Cam_fx: 0.795574
@@ -43,9 +55,9 @@ ClosedFormInit: True
 # -----------------------------------
 
 # --- Gazebo  ---
-Cam_fx: 0.5
-Cam_fy: 0.708333
-Cam_cx: 0.5
-Cam_cy: 0.5
-Cam_s: 0.5
+#Cam_fx: 0.5
+#Cam_fy: 0.708333
+#Cam_cx: 0.5
+#Cam_cy: 0.5
+#Cam_s: 0.5
 # -----------------------------------

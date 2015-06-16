@@ -275,10 +275,14 @@ vector<list< Vector<3> > > MapMaker::UnProjectFeatures(const list<vector<ImageRe
 
 double MapMaker::formatTimestamps (const vector<ros::Time>& timestamps, vector<double>& ret) {
   double t0 = timestamps[0].toSec();
+  cout << fixed << t0 << endl;
   for (vector<ros::Time>::const_iterator it = timestamps.begin(); it != timestamps.end(); it++)
   {
-    // normalize all time by t0
-    ret.push_back((*it).toSec() - t0);
+    // for debug purposes:
+    ret.push_back((*it).toSec());
+
+    // proper format:
+    // ret.push_back((*it).toSec() - t0);
   }
   return t0;
 }
@@ -349,6 +353,59 @@ bool MapMaker::integrateImuUpToTime(double initialTime, double tObs, queue<senso
   return true;
 }
 
+bool MapMaker::extractCamObs(KeyFrame::Ptr kF,
+                             KeyFrame::Ptr kS,
+                             const list<vector<CVD::ImageRef> >& features,
+                             const vector<ros::Time>& bearingTimestamps,
+                             SE3<> &se3TrackerPose)
+{
+  static int callCount=0;
+  callCount++;
+  cout << "call " << callCount<< endl;
+  stringstream cameraFilename;
+  cameraFilename << "cameraMeasurements" << callCount;
+  int nObs = features.front().size();
+  int nFeatures = features.size();
+
+  vector< list< Vector<3> > > opticalRays = UnProjectFeatures(features);
+  ofstream myfileCameraObs;
+  myfileCameraObs.open(cameraFilename.str().c_str());
+  vector<double> tObs;
+  double initialTime = formatTimestamps(bearingTimestamps, tObs);
+  myfileCameraObs << fixed << nFeatures << " " << initialTime << endl;
+  myfileCameraObs << fixed << tObs[0] << ",";
+  // build mu1 matrix with all first measurements
+  list< Vector<3> >::const_iterator featureIt = opticalRays[0].begin();
+  for (int iFeature = 0; iFeature < nFeatures; iFeature++, featureIt++)
+  {
+    myfileCameraObs << (*featureIt)[0] << "," << (*featureIt)[1] << "," << (*featureIt)[2];
+    if (iFeature != nFeatures - 1) {
+      myfileCameraObs << ",";
+    }
+  }
+  myfileCameraObs << endl;
+
+  // for all observations after the initial one
+  for (int iObs=1; iObs<nObs; iObs++)
+  {
+    myfileCameraObs << fixed << tObs[iObs] << ",";
+    // current feature observation (muj)
+    list<Vector<3> >::iterator bearIt = opticalRays[iObs].begin();
+    // for all features at this observation
+    for (int iFeature = 0; iFeature < nFeatures; iFeature++, bearIt++)
+    {
+      myfileCameraObs << (*bearIt)[0] << "," << (*bearIt)[1] << "," << (*bearIt)[2];
+      if (iFeature != nFeatures - 1) {
+        myfileCameraObs << ",";
+      }
+
+    }
+    myfileCameraObs << endl;
+  }
+  myfileCameraObs.close();
+  return false;
+}
+
 bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   KeyFrame::Ptr kS,
                                   const list<vector<CVD::ImageRef> >& features,
@@ -356,7 +413,6 @@ bool MapMaker::InitFromClosedForm(KeyFrame::Ptr kF,
                                   SE3<> &se3TrackerPose)
 {
   queue<sensor_msgs::Imu> imuMsgs = ImuHandler::getInstance().getMsgs();
-
   // CARE: NOT TAKING LAST OBS INTO ACCOUNT AS THE CORRESPONSING IMU NOT ALWAYS THERE
   // int nObs = features.front().size();
   int nObs = 19;
