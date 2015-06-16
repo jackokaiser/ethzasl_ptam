@@ -22,7 +22,7 @@ using namespace GVars3;
 
 
 System::System() :
-      nh_("vslam"), image_nh_(""), first_frame_(true)
+      nh_("vslam"), image_nh_(""), first_frame_(true), mpMap(NULL)
 {
   ImuHandler::getInstance().setCollectImuMsg(true);
   pub_pose_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped> ("pose", 1);
@@ -466,7 +466,7 @@ bool System::keyframesservice(ptam_com::KeyFrame_srvRequest & req, ptam_com::Key
   int k=0;
   static unsigned int seq=0;
 
-  if(!(mpMap->vpKeyFrames.size()>0) | !mpMap->bGood)
+  if(!mpMap || mpMap->vpKeyFrames.empty() || !mpMap->bGood)
     return false;
 
   resp.KFids.reserve(mpMap->vpKeyFrames.size());
